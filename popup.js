@@ -1145,7 +1145,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const rem = remote.version.split('.').map(Number);
       const newer = rem[0] > cur[0] || (rem[0]===cur[0] && rem[1] > cur[1]) || (rem[0]===cur[0] && rem[1]===cur[1] && rem[2] > cur[2]);
       if (newer) {
-        resultEl.innerHTML = `🎉 发现新版本 <strong>${remote.version}</strong>！${remote.version_name ? remote.version_name + ' ' : ''}<a href="${remote.update_url || 'https://github.com/Luogoddes/field-fill/archive/refs/heads/main.zip'}" target="_blank" style="color:var(--p);">点击下载</a>`;
+        resultEl.innerHTML = `🎉 发现新版本 <strong>${remote.version}</strong>！${remote.version_name ? remote.version_name + ' ' : ''}<a href="${remote.github_url || 'https://github.com/Luogoddes/field-fill/archive/refs/heads/main.zip'}" target="_blank" style="color:var(--p);">点击下载</a>`;
         resultEl.style.color = 'var(--ok)';
       } else {
         resultEl.textContent = `✅ 当前已是最新版本 (${manifest.version})`;

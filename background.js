@@ -159,7 +159,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   // Check for updates (called from IO panel)
   if (msg.action === 'checkUpdate') {
-    // Chrome handles updates automatically via update_url in manifest.
+    // Chrome handles updates automatically via github_url in manifest.
     // We expose the current version so popup can compare with a remote version file.
     sendResponse({ version: chrome.runtime.getManifest().version });
     return true;
