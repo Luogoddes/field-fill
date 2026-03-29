@@ -1105,6 +1105,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     showToast('✅ 右键菜单已重建，请在页面上右键试试', 'success', 3500);
   });
 
+  // Context menu toggle
+  async function setupContextMenuToggle() {
+    const contextMenuToggle = document.getElementById('context-menu-toggle');
+    if (contextMenuToggle) {
+      // Load current setting
+      const { contextMenuEnabled = true } = await chrome.storage.local.get('contextMenuEnabled');
+      contextMenuToggle.checked = contextMenuEnabled;
+      
+      // Add change listener
+      contextMenuToggle.addEventListener('change', async (e) => {
+        const enabled = e.target.checked;
+        await chrome.storage.local.set({ contextMenuEnabled: enabled });
+        await chrome.runtime.sendMessage({ action: 'rebuildMenu' });
+        showToast(enabled ? '✅ 右键菜单已启用' : '✅ 右键菜单已禁用', 'success');
+      });
+    }
+  }
+  setupContextMenuToggle();
+
   // Show current version
   const manifest = chrome.runtime.getManifest();
   const verEl = document.getElementById('cur-version');
@@ -1126,7 +1145,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const rem = remote.version.split('.').map(Number);
       const newer = rem[0] > cur[0] || (rem[0]===cur[0] && rem[1] > cur[1]) || (rem[0]===cur[0] && rem[1]===cur[1] && rem[2] > cur[2]);
       if (newer) {
-        resultEl.innerHTML = `🎉 发现新版本 <strong>${remote.version}</strong>！${remote.notes ? remote.notes + ' ' : ''}<a href="${remote.url || '#'}" target="_blank" style="color:var(--p);">点击下载</a>`;
+        resultEl.innerHTML = `🎉 发现新版本 <strong>${remote.version}</strong>！${remote.version_name ? remote.version_name + ' ' : ''}<a href="${remote.update_url || 'https://github.com/Luogoddes/field-fill/archive/refs/heads/main.zip'}" target="_blank" style="color:var(--p);">点击下载</a>`;
         resultEl.style.color = 'var(--ok)';
       } else {
         resultEl.textContent = `✅ 当前已是最新版本 (${manifest.version})`;

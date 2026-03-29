@@ -50,17 +50,20 @@ async function doFillActiveProfile(tabId) {
 // ══════════════════════════════════════════════
 //  Context Menu — plain text title only (no emoji), use 'all' contexts
 // ══════════════════════════════════════════════
-function setupContextMenu() {
+async function setupContextMenu() {
+  const { contextMenuEnabled = true } = await chrome.storage.local.get('contextMenuEnabled');
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({
-      id: 'uff-fill',
-      title: '字段填充',
-      contexts: ['all']   // 'all' ensures it shows on right-click anywhere
-    }, () => {
-      if (chrome.runtime.lastError) {
-        console.error('[UFF] menu create error:', chrome.runtime.lastError.message);
-      }
-    });
+    if (contextMenuEnabled) {
+      chrome.contextMenus.create({
+        id: 'uff-fill',
+        title: '字段填充',
+        contexts: ['all']   // 'all' ensures it shows on right-click anywhere
+      }, () => {
+        if (chrome.runtime.lastError) {
+          console.error('[UFF] menu create error:', chrome.runtime.lastError.message);
+        }
+      });
+    }
   });
 }
 
@@ -75,9 +78,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 //  Install / Update / Startup
 // ══════════════════════════════════════════════
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
-  setupContextMenu();
+  await setupContextMenu();
   if (reason === 'install') {
-    await chrome.storage.local.set({ profiles: [DEFAULT_PROFILE], theme: 'auto' });
+    await chrome.storage.local.set({ profiles: [DEFAULT_PROFILE], theme: 'auto', contextMenuEnabled: true });
     console.log('[UFF] v4.3 installed');
   } else if (reason === 'update') {
     await migrateData();
@@ -85,8 +88,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   }
 });
 
-chrome.runtime.onStartup.addListener(() => {
-  setupContextMenu();
+chrome.runtime.onStartup.addListener(async () => {
+  await setupContextMenu();
 });
 
 // ══════════════════════════════════════════════
@@ -115,7 +118,7 @@ async function migrateData() {
       data: data.currentConfig, tags: [], isDefault: true, createdAt: Date.now()
     });
   }
-  await chrome.storage.local.set({ profiles: [profile] });
+  await chrome.storage.local.set({ profiles: [profile], contextMenuEnabled: true });
 }
 
 // ══════════════════════════════════════════════
