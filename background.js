@@ -54,22 +54,8 @@ function setupContextMenu() {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: 'uff-fill',
-      title: '字段填充 - 填充此页面',
+      title: '字段填充',
       contexts: ['all']   // 'all' ensures it shows on right-click anywhere
-    }, () => {
-      if (chrome.runtime.lastError) {
-        console.error('[UFF] menu create error:', chrome.runtime.lastError.message);
-      }
-    });
-    chrome.contextMenus.create({
-      id: 'uff-sep',
-      type: 'separator',
-      contexts: ['all']
-    }, () => { if (chrome.runtime.lastError) {} });
-    chrome.contextMenus.create({
-      id: 'uff-open',
-      title: '字段填充 - 打开插件设置',
-      contexts: ['all']
     }, () => {
       if (chrome.runtime.lastError) {
         console.error('[UFF] menu create error:', chrome.runtime.lastError.message);
@@ -82,9 +68,6 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!tab?.id) return;
   if (info.menuItemId === 'uff-fill') {
     await doFillActiveProfile(tab.id);
-  } else if (info.menuItemId === 'uff-open') {
-    // openPopup requires user gesture in MV3, use notification or badge as fallback
-    try { await chrome.action.openPopup(); } catch (_) {}
   }
 });
 

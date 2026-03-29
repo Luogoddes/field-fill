@@ -23,8 +23,8 @@ let ctxChipId       = null;
 
 // Picker state
 let pickerActive    = false;
-let pickerPollTimer = null;
 let pickerTabId     = null;
+let pickerChangeListener = null; // storage 变化监听器
 
 // ════════════════════════════════════════════
 //  Helpers
@@ -49,7 +49,62 @@ function getActiveProfile() {
 //  Storage
 // ════════════════════════════════════════════
 const loadAll = () => new Promise(r => chrome.storage.local.get(['profiles', 'theme'], r));
-const saveProfiles = () => new Promise(r => chrome.storage.local.set({ profiles }, r));
+
+// 检查存储容量并清理过期数据
+async function checkAndCleanStorage() {
+  try {
+    const data = await chrome.storage.local.get(null);
+    const jsonStr = JSON.stringify(data);
+    const bytes = new Blob([jsonStr]).size;
+    const maxBytes = 5 * 1024 * 1024; // Chrome storage.local 限制约 5MB
+    const usagePercent = (bytes / maxBytes * 100).toFixed(1);
+
+    // 如果超过 80%，清理过期数据
+    if (bytes > maxBytes * 0.8) {
+      console.warn(`[UFF] 存储空间使用 ${usagePercent}%，开始清理...`);
+
+      // 清理过期的 pickerHover 数据（超过 5 分钟）
+      const now = Date.now();
+      if (data.__pickerHover && (now - data.__pickerHover.ts > 5 * 60 * 1000)) {
+        await chrome.storage.local.remove('__pickerHover');
+      }
+
+      // 清理其他临时数据
+      const keysToRemove = [];
+      for (const key of Object.keys(data)) {
+        if (key.startsWith('__temp_')) {
+          keysToRemove.push(key);
+        }
+      }
+      if (keysToRemove.length > 0) {
+        await chrome.storage.local.remove(keysToRemove);
+      }
+
+      showToast(`⚠️ 存储空间清理完成`, 'warning');
+    }
+
+    return { bytes, usagePercent };
+  } catch (e) {
+    console.error('[UFF] 存储检查失败:', e);
+    return { bytes: 0, usagePercent: 0 };
+  }
+}
+
+// 带容量检查的保存函数
+async function saveProfiles() {
+  await checkAndCleanStorage();
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.set({ profiles }, () => {
+      if (chrome.runtime.lastError) {
+        showToast('❌ 保存失败：' + chrome.runtime.lastError.message, 'error');
+        reject(chrome.runtime.lastError);
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
 const saveTheme = t => new Promise(r => chrome.storage.local.set({ theme: t }, r));
 
 // ════════════════════════════════════════════
@@ -672,7 +727,7 @@ async function addFieldManually() {
 // ════════════════════════════════════════════
 //  Live Hover Picker
 //  Popup stays open. content.js sends pickerHover to background
-//  background stores in __pickerHover. We poll storage every 150ms.
+//  background stores in __pickerHover. We use storage.onChanged for better performance.
 // ════════════════════════════════════════════
 async function startPicker() {
   if (pickerActive) { stopPicker(); return; }
@@ -704,11 +759,12 @@ async function startPicker() {
   // Clear old hover data
   await new Promise(r => chrome.storage.local.remove('__pickerHover', r));
 
-  // Poll storage for real-time hover data — always update both selector AND name
-  pickerPollTimer = setInterval(async () => {
-    const data = await new Promise(r => chrome.storage.local.get('__pickerHover', r));
-    if (!data.__pickerHover) return;
-    const { selector, type, label } = data.__pickerHover;
+  // Use storage.onChanged instead of polling for better performance
+  pickerChangeListener = (changes, area) => {
+    if (area !== 'local' || !changes.__pickerHover) return;
+    const { newValue } = changes.__pickerHover;
+    if (!newValue) return;
+    const { selector, type, label } = newValue;
     if (selector) {
       selEl.value = selector;
       selEl.style.borderColor = '#10b981';
@@ -717,13 +773,20 @@ async function startPicker() {
       const nameEl = document.getElementById('new-fname');
       if (label) nameEl.value = label;
     }
-  }, 150);
+  };
+  chrome.storage.onChanged.addListener(pickerChangeListener);
 }
 
 function stopPicker() {
   if (!pickerActive) return;
   pickerActive = false;
-  clearInterval(pickerPollTimer); pickerPollTimer = null;
+
+  // Remove storage change listener
+  if (pickerChangeListener) {
+    chrome.storage.onChanged.removeListener(pickerChangeListener);
+    pickerChangeListener = null;
+  }
+
   chrome.storage.local.remove('__pickerHover');
 
   const selEl  = document.getElementById('new-fsel');
@@ -980,7 +1043,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('about-btn').addEventListener('click', () => document.getElementById('about-ov').classList.add('show'));
   document.getElementById('about-close').addEventListener('click', () => document.getElementById('about-ov').classList.remove('show'));
   document.getElementById('about-ov').addEventListener('click', e=>{ if(e.target===e.currentTarget) e.currentTarget.classList.remove('show'); });
-  document.getElementById('github-link').addEventListener('click', e=>{ e.preventDefault(); chrome.tabs.create({url:'https://github.com/luo/universal-field-filler'}); });
+  document.getElementById('github-link').addEventListener('click', e=>{ e.preventDefault(); chrome.tabs.create({url:'https://github.com/Luogoddes/field-fill'}); });
 
   // Tabs
   document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => switchPanel(t.dataset.panel)));
@@ -1056,7 +1119,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     resultEl.style.display = 'block';
     resultEl.textContent = '正在检查…';
     try {
-      const resp = await fetch('https://raw.githubusercontent.com/luo/universal-field-filler/main/version.json', { cache: 'no-store' });
+      const resp = await fetch('https://raw.githubusercontent.com/Luogoddes/field-fill/main/manifest.json', { cache: 'no-store' });
       if (!resp.ok) throw new Error('无法访问更新服务器');
       const remote = await resp.json();
       const cur = manifest.version.split('.').map(Number);
@@ -1070,7 +1133,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         resultEl.style.color = 'var(--t2)';
       }
     } catch (e) {
-      resultEl.textContent = '⚠️ 检查失败：' + e.message + '（如已上传 Chrome 商店，商店会自动推送更新）';
+      resultEl.textContent = '⚠️ 检查失败：' + e.message + '（如已上传 Edge/Chrome 商店，商店会自动推送更新）';
       resultEl.style.color = 'var(--warn)';
     }
   });

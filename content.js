@@ -17,11 +17,11 @@
     const s = document.createElement('style');
     s.id = '__uff_style__';
     s.textContent = `
-      .uff-toast{position:fixed;top:18px;right:18px;z-index:2147483646;
+      .uff-toast{position:fixed;top:18px;right:18px;z-index:2147483647;
         padding:10px 18px;border-radius:10px;font-size:13px;font-weight:500;
         color:#fff;box-shadow:0 4px 20px rgba(0,0,0,.2);
         animation:uffIn .28s cubic-bezier(.4,0,.2,1);
-        transition:opacity .3s;max-width:320px;line-height:1.5;pointer-events:none;
+        transition:opacity .3s;max-width:320px;line-height:1.5;pointer-events:auto;
         font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;}
       .uff-toast.success{background:linear-gradient(135deg,#10b981,#34d399);}
       .uff-toast.error  {background:linear-gradient(135deg,#ef4444,#f87171);}
