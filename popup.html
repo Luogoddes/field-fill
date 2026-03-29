@@ -1,0 +1,1660 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <title>字段填充</title>
+  <style>
+    /* ════════════════════════════════════════════
+   CSS Variables · Light & Dark
+   洛 - 愿执一生笔，画汝眉上柳...
+════════════════════════════════════════════ */
+    :root {
+      --p: #6366f1;
+      --pl: #818cf8;
+      --pd: #4f46e5;
+      --sec: #8b5cf6;
+      --acc: #06b6d4;
+      --ok: #10b981;
+      --okl: #34d399;
+      --warn: #f59e0b;
+      --err: #ef4444;
+      --bg0: #fff;
+      --bg1: #f8fafc;
+      --bg2: #f1f5f9;
+      --card: #fff;
+      --t0: #1e293b;
+      --t1: #64748b;
+      --t2: #94a3b8;
+      --b0: #e2e8f0;
+      --b1: #cbd5e1;
+      --shsm: 0 1px 2px rgba(0, 0, 0, .05);
+      --shmd: 0 4px 6px -1px rgba(0, 0, 0, .1), 0 2px 4px -2px rgba(0, 0, 0, .1);
+      --shlg: 0 10px 15px -3px rgba(0, 0, 0, .1), 0 4px 6px -4px rgba(0, 0, 0, .1);
+      --rsm: 6px;
+      --rmd: 10px;
+      --rlg: 14px;
+      --rf: 9999px;
+      --tf: 150ms cubic-bezier(.4, 0, .2, 1);
+      --tn: 200ms cubic-bezier(.4, 0, .2, 1);
+    }
+
+    [data-theme="dark"] {
+      --bg0: #0f172a;
+      --bg1: #1e293b;
+      --bg2: #334155;
+      --card: #1e293b;
+      --t0: #f1f5f9;
+      --t1: #94a3b8;
+      --t2: #64748b;
+      --b0: #334155;
+      --b1: #475569;
+    }
+
+    *,
+    *::before,
+    *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 460px;
+      height: 600px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-size: 13px;
+      color: var(--t0);
+      background: var(--bg1);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      line-height: 1.5;
+      transition: background var(--tn), color var(--tn);
+    }
+
+    ::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--b1);
+      border-radius: var(--rf);
+    }
+
+    /* Header */
+    .hdr {
+      background: linear-gradient(135deg, var(--p), var(--sec));
+      padding: 11px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hdr::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -8%;
+      width: 160px;
+      height: 160px;
+      background: rgba(255, 255, 255, .08);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    .hl {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hico {
+      width: 34px;
+      height: 34px;
+      background: rgba(255, 255, 255, .2);
+      border-radius: var(--rmd);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      backdrop-filter: blur(4px);
+    }
+
+    .htitle {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -.01em;
+    }
+
+    .hsub {
+      font-size: 10px;
+      color: rgba(255, 255, 255, .8);
+      font-style: italic;
+    }
+
+    .hr {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hbtn {
+      width: 28px;
+      height: 28px;
+      border: none;
+      background: rgba(255, 255, 255, .15);
+      border-radius: var(--rmd);
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background var(--tf);
+      color: #fff;
+    }
+
+    .hbtn:hover {
+      background: rgba(255, 255, 255, .28);
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      background: var(--bg0);
+      border-bottom: 1px solid var(--b0);
+      padding: 0 8px;
+      flex-shrink: 0;
+      gap: 2px;
+      transition: background var(--tn);
+    }
+
+    .tab {
+      padding: 9px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--t1);
+      border-bottom: 2px solid transparent;
+      transition: all var(--tn);
+      margin-bottom: -1px;
+      white-space: nowrap;
+    }
+
+    .tab:hover {
+      color: var(--p);
+      background: var(--bg2);
+      border-radius: var(--rsm) var(--rsm) 0 0;
+    }
+
+    .tab.active {
+      color: var(--p);
+      border-bottom-color: var(--p);
+      font-weight: 600;
+    }
+
+    /* Panel */
+    .panel {
+      display: none;
+      flex: 1;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .panel.active {
+      display: flex;
+    }
+
+    .scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+
+    /* Empty */
+    .empty {
+      text-align: center;
+      padding: 28px 16px;
+    }
+
+    .empty-i {
+      font-size: 30px;
+      margin-bottom: 7px;
+    }
+
+    .empty-t {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--t0);
+      margin-bottom: 4px;
+    }
+
+    .empty-d {
+      font-size: 11px;
+      color: var(--t2);
+    }
+
+    /* Section */
+    .sec {
+      background: var(--card);
+      border: 1px solid var(--b0);
+      border-radius: var(--rlg);
+      margin-bottom: 10px;
+      overflow: hidden;
+      transition: background var(--tn);
+    }
+
+    .sec-hd {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--b0);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--t0);
+      gap: 6px;
+    }
+
+    .sec-hd-r {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .sec-bd {
+      padding: 10px 12px;
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 7px 14px;
+      border: none;
+      border-radius: var(--rsm);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all var(--tf);
+      white-space: nowrap;
+    }
+
+    .btn-p {
+      background: var(--p);
+      color: #fff;
+    }
+
+    .btn-p:hover {
+      background: var(--pd);
+    }
+
+    .btn-ok {
+      background: var(--ok);
+      color: #fff;
+    }
+
+    .btn-ok:hover {
+      background: #059669;
+    }
+
+    .btn-g {
+      background: var(--bg2);
+      color: var(--t0);
+      border: 1px solid var(--b0);
+    }
+
+    .btn-g:hover {
+      background: var(--b0);
+    }
+
+    .btn-err {
+      background: rgba(239, 68, 68, .08);
+      color: var(--err);
+      border: 1px solid rgba(239, 68, 68, .2);
+    }
+
+    .btn-err:hover {
+      background: var(--err);
+      color: #fff;
+    }
+
+    .btn-sm {
+      padding: 4px 10px;
+      font-size: 11px;
+    }
+
+    .btn-block {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .bico {
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: var(--t2);
+      cursor: pointer;
+      border-radius: var(--rsm);
+      font-size: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--tf);
+    }
+
+    .bico:hover {
+      background: var(--bg2);
+      color: var(--p);
+    }
+
+    .bico.d:hover {
+      background: rgba(239, 68, 68, .1);
+      color: var(--err);
+    }
+
+    /* Save btn pulse when has changes */
+    .btn.has-changes {
+      background: var(--warn) !important;
+      color: #fff !important;
+      box-shadow: 0 0 0 3px rgba(245, 158, 11, .3);
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        box-shadow: 0 0 0 3px rgba(245, 158, 11, .3);
+      }
+
+      50% {
+        box-shadow: 0 0 0 7px rgba(245, 158, 11, .08);
+      }
+    }
+
+    /* Form */
+    .inp {
+      width: 100%;
+      padding: 7px 10px;
+      border: 1px solid var(--b0);
+      border-radius: var(--rsm);
+      font-size: 12px;
+      font-family: inherit;
+      background: var(--bg0);
+      color: var(--t0);
+      transition: border-color var(--tf);
+    }
+
+    .inp:focus {
+      outline: none;
+      border-color: var(--p);
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, .12);
+    }
+
+    .inp::placeholder {
+      color: var(--t2);
+    }
+
+    select.inp {
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2394a3b8'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+      padding-right: 24px;
+    }
+
+    /* Picker active state for selector input */
+    .inp.picker-active {
+      border-color: var(--p);
+      background: rgba(99, 102, 241, .04);
+      animation: pickerPulse 1s ease-in-out infinite;
+    }
+
+    @keyframes pickerPulse {
+
+      0%,
+      100% {
+        box-shadow: 0 0 0 2px rgba(99, 102, 241, .2);
+      }
+
+      50% {
+        box-shadow: 0 0 0 4px rgba(99, 102, 241, .08);
+      }
+    }
+
+    .picker-hint {
+      font-size: 11px;
+      color: var(--p);
+      margin-top: 4px;
+      display: none;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .picker-hint.show {
+      display: flex;
+    }
+
+    /* ══ PRESETS ════════════════════════════════ */
+    .plist {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .pcard {
+      background: var(--card);
+      border: 1px solid var(--b0);
+      border-radius: var(--rlg);
+      overflow: hidden;
+      transition: border-color var(--tn), box-shadow var(--tn);
+    }
+
+    .pcard:hover {
+      border-color: var(--pl);
+      box-shadow: var(--shmd);
+    }
+
+    .pcard.is-def {
+      border-color: var(--p);
+      background: linear-gradient(135deg, rgba(99, 102, 241, .04), rgba(139, 92, 246, .04));
+    }
+
+    .pcard-hd {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 11px;
+      cursor: pointer;
+      transition: background var(--tf);
+    }
+
+    .pcard-hd:hover {
+      background: var(--bg2);
+    }
+
+    .pcard.is-def .pcard-hd {
+      background: linear-gradient(135deg, var(--p), var(--sec));
+    }
+
+    .pcard.is-def .pcard-hd:hover {
+      background: linear-gradient(135deg, var(--pd), var(--sec));
+    }
+
+    .pcard-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .pcard-ico {
+      width: 28px;
+      height: 28px;
+      background: var(--bg2);
+      border-radius: var(--rsm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    .pcard.is-def .pcard-ico {
+      background: rgba(255, 255, 255, .2);
+    }
+
+    .pcard-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--t0);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      line-height: 1.3;
+    }
+
+    .pcard.is-def .pcard-name {
+      color: #fff;
+    }
+
+    .pcard-tags {
+      display: flex;
+      gap: 3px;
+      flex-wrap: wrap;
+      margin-top: 3px;
+    }
+
+    .ptag {
+      font-size: 10px;
+      padding: 1px 6px;
+      background: var(--bg2);
+      color: var(--t1);
+      border-radius: var(--rf);
+    }
+
+    .pcard.is-def .ptag {
+      background: rgba(255, 255, 255, .22);
+      color: rgba(255, 255, 255, .95);
+    }
+
+    .ptag.profile-tag {
+      background: rgba(99, 102, 241, .12);
+      color: var(--p);
+      font-weight: 600;
+    }
+
+    .pcard.is-def .ptag.profile-tag {
+      background: rgba(255, 255, 255, .3);
+      color: #fff;
+    }
+
+    .pcard-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 7px;
+      background: rgba(255, 255, 255, .28);
+      color: #fff;
+      border-radius: var(--rf);
+      flex-shrink: 0;
+    }
+
+    .pcard-acts {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .pact {
+      height: 26px;
+      padding: 0 9px;
+      border: none;
+      border-radius: var(--rsm);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      transition: all var(--tf);
+      background: transparent;
+      color: var(--t1);
+    }
+
+    .pact:hover {
+      background: var(--bg2);
+      color: var(--p);
+    }
+
+    .pact.fill {
+      background: var(--p);
+      color: #fff;
+    }
+
+    .pact.fill:hover {
+      background: var(--pd);
+    }
+
+    .pcard.is-def .pact {
+      color: rgba(255, 255, 255, .82);
+    }
+
+    .pcard.is-def .pact:hover {
+      background: rgba(255, 255, 255, .18);
+      color: #fff;
+    }
+
+    .pcard.is-def .pact.fill {
+      background: rgba(255, 255, 255, .25);
+    }
+
+    .pcard.is-def .pact.fill:hover {
+      background: rgba(255, 255, 255, .4);
+    }
+
+    /* Preset detail */
+    .pdetail {
+      display: none;
+      padding: 10px 12px;
+      border-top: 1px solid var(--b0);
+    }
+
+    .pdetail.open {
+      display: block;
+    }
+
+    .detail-meta {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 7px;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+      margin-bottom: 9px;
+    }
+
+    .dfield {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .dfield.full {
+      grid-column: 1/-1;
+    }
+
+    .dlbl {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--t2);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+
+    .dfield textarea.inp {
+      resize: vertical;
+      min-height: 50px;
+    }
+
+    .detail-acts {
+      display: flex;
+      gap: 4px;
+      flex-wrap: nowrap;
+    }
+
+    .detail-acts .btn {
+      flex: 1;
+      justify-content: center;
+      padding: 5px 2px;
+      font-size: 11px;
+      min-width: 0;
+    }
+
+    /* Text preview — editable */
+    .preset-text-preview-edit {
+      width: 100%;
+      resize: vertical;
+      min-height: 100px;
+      font-family: "SF Mono", Monaco, "Cascadia Code", "Consolas", monospace;
+      font-size: 11px;
+      line-height: 1.8;
+      padding: 9px 11px;
+      background: var(--bg2);
+      border: 1px solid var(--b0);
+      border-radius: var(--rsm);
+      color: var(--t1);
+      margin-bottom: 4px;
+    }
+
+    /* ══ FIELD LIST ══════════════════════════════ */
+    .flist {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .fitem {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 9px;
+      background: var(--bg0);
+      border: 1px solid var(--b0);
+      border-radius: var(--rsm);
+      transition: all var(--tf);
+    }
+
+    .fitem:hover {
+      border-color: var(--pl);
+    }
+
+    .fitem.drag-over {
+      border-color: var(--p);
+      background: rgba(99, 102, 241, .05);
+    }
+
+    .fitem.dragging {
+      opacity: .3;
+    }
+
+    .drag-h {
+      color: var(--t2);
+      font-size: 14px;
+      cursor: grab;
+      flex-shrink: 0;
+      user-select: none;
+    }
+
+    .ftype {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 2px 5px;
+      border-radius: 3px;
+      flex-shrink: 0;
+      text-transform: uppercase;
+    }
+
+    .ftype.text {
+      background: rgba(6, 182, 212, .12);
+      color: var(--acc);
+    }
+
+    .ftype.select {
+      background: rgba(139, 92, 246, .12);
+      color: var(--sec);
+    }
+
+    .ftype.textarea {
+      background: rgba(16, 185, 129, .12);
+      color: var(--ok);
+    }
+
+    .finfo {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .fname-e {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--t0);
+      border: 1px solid transparent;
+      border-radius: 4px;
+      padding: 1px 5px;
+      background: transparent;
+      width: 100%;
+      font-family: inherit;
+      transition: border-color var(--tf), background var(--tf);
+    }
+
+    .fname-e:hover {
+      border-color: var(--b0);
+      background: var(--bg2);
+    }
+
+    .fname-e:focus {
+      outline: none;
+      border-color: var(--p);
+      background: var(--bg0);
+    }
+
+    .fsel {
+      font-size: 10px;
+      color: var(--t2);
+      font-family: monospace;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding: 0 5px;
+    }
+
+    .fw-toggle {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 10px;
+      color: var(--t2);
+      cursor: pointer;
+      flex-shrink: 0;
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    .fw-toggle input {
+      accent-color: var(--p);
+    }
+
+    .batch-cb {
+      display: none;
+      flex-shrink: 0;
+      accent-color: var(--p);
+      cursor: pointer;
+      width: 14px;
+      height: 14px;
+    }
+
+    .batch-mode .batch-cb {
+      display: block;
+    }
+
+    .batch-bar {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 7px;
+      padding: 6px 8px;
+      background: rgba(239, 68, 68, .06);
+      border: 1px solid rgba(239, 68, 68, .18);
+      border-radius: var(--rsm);
+    }
+
+    .batch-bar.show {
+      display: flex;
+    }
+
+    .batch-bar label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--t1);
+    }
+
+    .batch-bar label input {
+      accent-color: var(--p);
+    }
+
+    /* Extract results */
+    .er-wrap {
+      display: none;
+      margin-top: 8px;
+    }
+
+    .er-wrap.show {
+      display: block;
+    }
+
+    .er-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--t1);
+      margin-bottom: 5px;
+    }
+
+    .er-list {
+      max-height: 140px;
+      overflow-y: auto;
+      border: 1px solid var(--b0);
+      border-radius: var(--rsm);
+      background: var(--bg0);
+    }
+
+    .er-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px;
+      border-bottom: 1px solid var(--b0);
+      cursor: pointer;
+      transition: background var(--tf);
+    }
+
+    .er-item:last-child {
+      border-bottom: none;
+    }
+
+    .er-item:hover {
+      background: var(--bg2);
+    }
+
+    .er-item input[type="checkbox"] {
+      flex-shrink: 0;
+      accent-color: var(--p);
+    }
+
+    .er-lbl {
+      font-size: 12px;
+      color: var(--t0);
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .er-type {
+      font-size: 10px;
+      padding: 1px 5px;
+      background: var(--bg2);
+      color: var(--t2);
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+
+    .er-sel {
+      font-size: 10px;
+      color: var(--t2);
+      font-family: monospace;
+      flex-shrink: 0;
+      max-width: 90px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .er-acts {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    /* Profile chips */
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 10px;
+      border-radius: var(--rf);
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--bg2);
+      color: var(--t1);
+      border: 1px solid var(--b0);
+      cursor: pointer;
+      transition: all var(--tf);
+    }
+
+    .chip:hover {
+      border-color: var(--pl);
+      color: var(--p);
+    }
+
+    .chip.active {
+      background: var(--p);
+      color: #fff;
+      border-color: var(--p);
+    }
+
+    .chip-m {
+      width: 16px;
+      height: 16px;
+      border: none;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      border-radius: 3px;
+      opacity: .6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+
+    .chip-m:hover {
+      opacity: 1;
+    }
+
+    .chip-new {
+      padding: 5px 10px;
+      border-radius: var(--rf);
+      font-size: 11px;
+      background: transparent;
+      border: 1.5px dashed var(--b1);
+      color: var(--t2);
+      cursor: pointer;
+      transition: all var(--tf);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .chip-new:hover {
+      border-color: var(--p);
+      color: var(--p);
+    }
+
+    .profile-badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      background: var(--p);
+      color: #fff;
+      border-radius: var(--rf);
+      font-weight: 600;
+    }
+
+    /* ══ PARSE ════════════════════════════════════ */
+    .parse-ta {
+      width: 100%;
+      min-height: 280px;
+      padding: 9px;
+      border: 1px solid var(--b0);
+      border-radius: var(--rmd);
+      font-size: 12px;
+      font-family: inherit;
+      background: var(--bg0);
+      color: var(--t0);
+      resize: vertical;
+      transition: border-color var(--tf);
+      margin-bottom: 8px;
+    }
+
+    .parse-ta:focus {
+      outline: none;
+      border-color: var(--p);
+    }
+
+    .parse-ta::placeholder {
+      color: var(--t2);
+    }
+
+    .parse-result {
+      display: none;
+      background: var(--card);
+      border: 1px solid var(--b0);
+      border-radius: var(--rmd);
+      padding: 10px 12px;
+      margin-top: 8px;
+    }
+
+    .parse-result.show {
+      display: block;
+    }
+
+    .pr-hd {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .pr-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ok);
+    }
+
+    .pr-pre {
+      font-family: monospace;
+      font-size: 11px;
+      line-height: 1.6;
+      color: var(--t1);
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 110px;
+      overflow-y: auto;
+    }
+
+    .ppick {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 8px;
+    }
+
+    .ppick-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 10px;
+      background: var(--bg0);
+      border: 1px solid var(--b0);
+      border-radius: var(--rsm);
+      cursor: pointer;
+      transition: all var(--tf);
+    }
+
+    .ppick-item:hover {
+      border-color: var(--p);
+      background: rgba(99, 102, 241, .05);
+    }
+
+    .ppick-cnt {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--p);
+    }
+
+    .kbd-h {
+      font-size: 10px;
+      color: var(--t2);
+      text-align: center;
+      margin-top: 5px;
+    }
+
+    .kbd-h kbd {
+      padding: 1px 5px;
+      background: var(--bg2);
+      border: 1px solid var(--b0);
+      border-radius: 3px;
+    }
+
+    /* IO */
+    .io-lbl {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--t2);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      padding: 4px 0;
+    }
+
+    .io-div {
+      height: 1px;
+      background: var(--b0);
+      margin: 7px 0;
+    }
+
+    /* Ctx menu */
+    .ctx {
+      display: none;
+      position: fixed;
+      z-index: 9999;
+      background: var(--card);
+      border: 1px solid var(--b0);
+      border-radius: var(--rmd);
+      box-shadow: var(--shlg);
+      padding: 4px;
+      min-width: 130px;
+    }
+
+    .ctx.show {
+      display: block;
+      animation: ctxIn .12s ease;
+    }
+
+    @keyframes ctxIn {
+      from {
+        opacity: 0;
+        transform: scale(.94)
+      }
+
+      to {
+        opacity: 1;
+        transform: scale(1)
+      }
+    }
+
+    .ctx-item {
+      padding: 7px 12px;
+      font-size: 12px;
+      color: var(--t0);
+      cursor: pointer;
+      border-radius: var(--rsm);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      transition: background var(--tf);
+    }
+
+    .ctx-item:hover {
+      background: var(--bg2);
+    }
+
+    .ctx-item.d {
+      color: var(--err);
+    }
+
+    .ctx-item.d:hover {
+      background: rgba(239, 68, 68, .08);
+    }
+
+    /* Dialog */
+    .dlg-ov {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, .5);
+      z-index: 10000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .dlg-ov.show {
+      display: flex;
+      animation: fadeIn .18s ease;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0
+      }
+
+      to {
+        opacity: 1
+      }
+    }
+
+    .dlg {
+      background: var(--card);
+      border-radius: var(--rlg);
+      padding: 20px;
+      width: 300px;
+      max-width: 95%;
+      box-shadow: var(--shlg);
+      animation: slideUp .22s ease;
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(14px)
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0)
+      }
+    }
+
+    .dlg-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--t0);
+      margin-bottom: 10px;
+    }
+
+    .dlg-hint {
+      font-size: 11px;
+      color: var(--t2);
+      margin: 5px 0 12px;
+    }
+
+    .dlg-btns {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 14px;
+    }
+
+    /* About */
+    .about-hero {
+      background: linear-gradient(135deg, var(--p), var(--sec));
+      padding: 18px;
+      text-align: center;
+      border-radius: var(--rmd) var(--rmd) 0 0;
+      margin: -20px -20px 14px;
+    }
+
+    .ah-icon {
+      font-size: 32px;
+      margin-bottom: 5px;
+    }
+
+    .ah-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .ah-sub {
+      font-size: 10px;
+      color: rgba(255, 255, 255, .8);
+      font-style: italic;
+      margin-top: 2px;
+    }
+
+    .about-rows {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .arow {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+    }
+
+    .arow-ico {
+      width: 30px;
+      height: 30px;
+      border-radius: var(--rsm);
+      background: var(--bg2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    .arow-lbl {
+      font-size: 10px;
+      color: var(--t2);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+
+    .arow-val {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--t0);
+    }
+
+    .arow-val a {
+      color: var(--p);
+      text-decoration: none;
+    }
+
+    .arow-val a:hover {
+      text-decoration: underline;
+    }
+
+    .a-div {
+      height: 1px;
+      background: var(--b0);
+    }
+
+    .a-poem {
+      text-align: center;
+      font-size: 11px;
+      color: var(--t2);
+      font-style: italic;
+      padding: 4px 0;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%) translateY(50px);
+      padding: 8px 15px;
+      border-radius: var(--rmd);
+      font-size: 12px;
+      font-weight: 500;
+      color: #fff;
+      box-shadow: var(--shlg);
+      z-index: 20000;
+      opacity: 0;
+      transition: all var(--tn);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    .toast.success {
+      background: linear-gradient(135deg, var(--ok), var(--okl));
+    }
+
+    .toast.error {
+      background: linear-gradient(135deg, var(--err), #f87171);
+    }
+
+    .toast.info {
+      background: linear-gradient(135deg, var(--p), var(--sec));
+    }
+
+    .toast.warning {
+      background: linear-gradient(135deg, var(--warn), #fbbf24);
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Header -->
+  <div class="hdr">
+    <div class="hl">
+      <div class="hico">✒️</div>
+      <div>
+        <div class="htitle">字段填充 <span style="font-size:10px;font-weight:400;opacity:.7;">Universal Field Filler</span>
+        </div>
+        <div class="hsub">洛 - 愿执一生笔，画汝眉上柳...</div>
+      </div>
+    </div>
+    <div class="hr">
+      <button class="hbtn" id="theme-btn" title="切换主题">🌙</button>
+      <button class="hbtn" id="about-btn" title="关于">ℹ️</button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" data-panel="presets">📋 预设填充</div>
+    <div class="tab" data-panel="fields">🔧 字段配置</div>
+    <div class="tab" data-panel="parse">🔍 智能解析</div>
+    <div class="tab" data-panel="io">📦 导入导出</div>
+  </div>
+
+  <!-- ════ PRESETS ════ -->
+  <div class="panel active" id="panel-presets">
+    <div class="scroll">
+      <div style="display:flex;gap:6px;margin-bottom:10px;">
+        <input class="inp" id="preset-search" placeholder="🔍 搜索预设名称或标签…" style="flex:1;">
+        <button class="btn btn-p btn-sm" id="add-preset-btn" title="新建预设"
+          style="padding:7px 13px;font-size:14px;">＋</button>
+      </div>
+      <div class="plist" id="preset-list"></div>
+    </div>
+  </div>
+
+  <!-- ════ FIELDS & CONFIG ════ -->
+  <div class="panel" id="panel-fields">
+    <div class="scroll">
+
+      <!-- 1. Profile 管理 (first) -->
+      <div class="sec">
+        <div class="sec-hd">
+          <span>👤 Profile 管理</span>
+          <button class="btn btn-p btn-sm" id="new-profile-btn">＋ 新建</button>
+        </div>
+        <div class="sec-bd">
+          <div class="chips" id="profile-chips"></div>
+        </div>
+      </div>
+
+      <!-- 2. 添加字段 (second) -->
+      <div class="sec">
+        <div class="sec-hd">
+          <span>➕ 添加字段</span>
+          <div class="sec-hd-r">
+            <button class="btn btn-g btn-sm" id="scan-btn">📋 扫描页面</button>
+          </div>
+        </div>
+        <div class="sec-bd">
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <input class="inp" id="new-fname" placeholder="字段名称（如：主题）">
+            <!-- Selector input + live picker button -->
+            <div style="display:flex;gap:5px;flex-direction:column;">
+              <div style="display:flex;gap:5px;">
+                <input class="inp" id="new-fsel" placeholder="CSS 选择器（如：#issue_subject）" style="flex:1;">
+                <button class="btn btn-g btn-sm" id="pick-btn" title="开启悬停拾取：鼠标悬停到页面字段时自动填入此处">🎯 拾取</button>
+              </div>
+              <div class="picker-hint" id="picker-hint">
+                <span
+                  style="width:6px;height:6px;background:var(--p);border-radius:50%;display:inline-block;animation:pulse 1s infinite;flex-shrink:0;"></span>
+                拾取中… 将鼠标悬停到目标字段，选择器将自动填入 · <a href="#" id="stop-pick-link"
+                  style="color:var(--err);text-decoration:none;font-weight:600;">停止</a>
+              </div>
+            </div>
+            <div style="display:flex;gap:5px;">
+              <select class="inp" id="new-ftype" style="flex:1;">
+                <option value="text">文本输入框</option>
+                <option value="select">下拉选择框</option>
+                <option value="textarea">多行文本框</option>
+              </select>
+              <button class="btn btn-p btn-sm" id="add-field-btn">添加字段</button>
+            </div>
+          </div>
+          <!-- Scan results -->
+          <div class="er-wrap" id="er-wrap">
+            <div class="er-title" id="er-title"></div>
+            <div class="er-list" id="er-list"></div>
+            <div class="er-acts">
+              <button class="btn btn-g btn-sm" id="er-selall">全选</button>
+              <button class="btn btn-ok btn-sm" id="er-add">✅ 添加选中字段</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. 已配置字段 (third) -->
+      <div class="sec">
+        <div class="sec-hd">
+          <span>📝 已配置字段 <span id="field-count" style="color:var(--t2);font-weight:400;font-size:11px;"></span></span>
+          <div class="sec-hd-r">
+            <span class="profile-badge" id="active-profile-badge" style="display:none;"></span>
+            <button class="btn btn-g btn-sm" id="batch-toggle-btn">批量管理</button>
+          </div>
+        </div>
+        <div class="sec-bd">
+          <div class="batch-bar" id="batch-bar">
+            <label><input type="checkbox" id="selall-fields"> 全选</label>
+            <button class="btn btn-err btn-sm" id="del-selected-btn">🗑️ 删除所选</button>
+            <span id="sel-count" style="font-size:11px;color:var(--t2);margin-left:auto;"></span>
+          </div>
+          <div class="flist" id="field-list"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ════ PARSE ════ -->
+  <div class="panel" id="panel-parse">
+    <div class="scroll">
+      <div id="ppick-sec" style="display:none;margin-bottom:8px;">
+        <div style="font-size:11px;font-weight:600;color:var(--t1);margin-bottom:5px;">多个 Profile 匹配，请选择：</div>
+        <div class="ppick" id="ppick-list"></div>
+      </div>
+      <textarea class="parse-ta" id="parse-input" placeholder="粘贴包含字段数据的文本，自动按字段名匹配…
+
+示例：
+软件版本： v4.2
+构建编号： Build-2026032801
+分支信息： master
+代码提交： a7f3e9d2c8b1
+测试环境： Ubuntu 22.04 LTS
+发布类型： Beta
+审核状态： Pending Review"></textarea>
+      <button class="btn btn-p btn-block" id="parse-btn">🔍 解析文本</button>
+      <div class="kbd-h">按 <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 快速解析</div>
+      <div class="parse-result" id="parse-result">
+        <div class="pr-hd">
+          <div class="pr-title">✅ 解析完成，匹配 <strong id="parse-cnt">0</strong> 个字段</div>
+          <button class="btn btn-ok btn-sm" id="save-parse-btn">💾 保存预设</button>
+        </div>
+        <pre class="pr-pre" id="parse-pre"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════ IO ════ -->
+  <div class="panel" id="panel-io">
+    <div class="scroll">
+      <div class="io-lbl">全量备份</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:4px;">
+        <button class="btn btn-p btn-block" id="export-all-btn">📤 导出全部 Profiles + 预设</button>
+        <button class="btn btn-g btn-block" id="import-all-btn">📥 导入备份文件</button>
+      </div>
+      <div class="io-div"></div>
+      <div class="io-lbl">当前 Profile</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:4px;">
+        <button class="btn btn-g btn-block" id="export-profile-btn">📋 导出当前 Profile</button>
+        <button class="btn btn-g btn-block" id="import-profile-btn">📥 导入 Profile</button>
+      </div>
+      <div class="io-div"></div>
+      <div class="io-lbl">快捷键 &amp; 右键菜单</div>
+      <div style="font-size:12px;color:var(--t1);padding:4px 0;line-height:2.2;">
+        快捷键：<kbd
+          style="padding:2px 7px;background:var(--bg2);border:1px solid var(--b0);border-radius:4px;">Ctrl+Shift+F</kbd><br>
+        右键页面空白处可看到「<strong>字段填充 - 填充此页面</strong>」选项<br>
+        <span style="font-size:11px;color:var(--t2);">如右键菜单未出现，点击下方按钮重建：</span>
+      </div>
+      <button class="btn btn-g btn-block" id="rebuild-menu-btn" style="margin-top:4px;">🔄 重建右键菜单</button>
+      <div class="io-div"></div>
+      <div class="io-lbl">版本与更新</div>
+      <div
+        style="font-size:12px;color:var(--t1);padding:4px 0;display:flex;align-items:center;justify-content:space-between;">
+        <span>当前版本：<strong id="cur-version">—</strong></span>
+        <button class="btn btn-g btn-sm" id="check-update-btn">🔍 检查更新</button>
+      </div>
+      <div id="update-result" style="font-size:11px;color:var(--t2);margin-top:4px;display:none;"></div>
+      <input type="file" id="file-import" accept=".json" style="display:none;">
+    </div>
+  </div>
+
+  <!-- Context Menu -->
+  <div class="ctx" id="ctx-menu">
+    <div class="ctx-item" id="ctx-activate">✅ 设为激活</div>
+    <div class="ctx-item" id="ctx-rename">✏️ 重命名</div>
+    <div class="ctx-item d" id="ctx-delete">🗑️ 删除</div>
+  </div>
+
+  <!-- About -->
+  <div class="dlg-ov" id="about-ov">
+    <div class="dlg" style="width:310px;">
+      <div class="about-hero">
+        <div class="ah-icon">✒️</div>
+        <div class="ah-title">字段填充 · Universal Field Filler</div>
+        <div class="ah-sub">V<strong id="cur-version1">V洛</strong> · Chrome MV3 Extension</div>
+      </div>
+      <div class="about-rows">
+        <div class="arow">
+          <div class="arow-ico">👤</div>
+          <div>
+            <div class="arow-lbl">作者</div>
+            <div class="arow-val">洛 (Luo)</div>
+          </div>
+        </div>
+        <div class="a-div"></div>
+        <div class="arow">
+          <div class="arow-ico">💬</div>
+          <div>
+            <div class="arow-lbl">简介</div>
+            <div class="arow-val" style="font-weight:400;font-size:12px;line-height:1.6;">通用表单字段填充工具，支持多
+              Profile、实时拾取、批量管理、暗黑模式与导入导出。</div>
+          </div>
+        </div>
+        <div class="a-div"></div>
+        <div class="arow">
+          <div class="arow-ico">🔗</div>
+          <div>
+            <div class="arow-lbl">开源地址</div>
+            <div class="arow-val"><a href="#" id="github-link">github.com/luo/universal-field-filler</a></div>
+          </div>
+        </div>
+        <div class="a-div"></div>
+        <div class="a-poem">愿执一生笔，画汝眉上柳</div>
+      </div>
+      <div class="dlg-btns"><button class="btn btn-p" id="about-close">关闭</button></div>
+    </div>
+  </div>
+
+  <!-- Dialog -->
+  <div class="dlg-ov" id="dlg-ov">
+    <div class="dlg">
+      <div class="dlg-title" id="dlg-title">输入</div>
+      <input class="inp" id="dlg-inp" placeholder="">
+      <div class="dlg-hint" id="dlg-hint"></div>
+      <div class="dlg-btns">
+        <button class="btn btn-g" id="dlg-cancel">取消</button>
+        <button class="btn btn-p" id="dlg-confirm">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="popup.js"></script>
+</body>
+
+</html>
