@@ -45,8 +45,8 @@
 
 ## 🚀 安装方法
 
-### 方法一：从 Chrome Web Store 安装
-（待发布）
+### 方法一：从 microsoftedge 安装
+- Edge 扩展: [Edge 点击进入]([https://github.com/Luogoddes/field-fill](https://microsoftedge.microsoft.com/addons/detail/%E5%AD%97%E6%AE%B5%E5%A1%AB%E5%85%85/aekjpmdkkenfoclhkmmjjchnebfaopej?hl=zh-CN))
 
 ### 方法二：手动安装（开发者模式）
 1. 下载本项目的 ZIP 包并解压
