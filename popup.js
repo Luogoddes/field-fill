@@ -248,7 +248,10 @@ function renderPresets() {
       `<span class="ptag${i === 0 ? ' profile-tag' : ''}">${esc(t)}</span>`
     ).join('');
 
-    return `
+    // 检查是否启用跳转填充
+  const jumpFillEnabled = p.autoFill?.jumpFill?.enabled && p.autoFill?.jumpFill?.url;
+
+  return `
       <div class="pcard ${isGlobalDef ? 'is-def' : ''}"
            data-pid="${p.id}" data-profileid="${profile.id}">
         <div class="pcard-hd">
@@ -261,6 +264,7 @@ function renderPresets() {
             ${isGlobalDef ? '<span class="pcard-badge">全局默认</span>' : ''}
           </div>
           <div class="pcard-acts">
+            ${jumpFillEnabled ? `<button class="pact jump" data-pid="${p.id}" data-profileid="${profile.id}" title="跳转并填充">🔗 跳转</button>` : ''}
             <button class="pact fill" data-pid="${p.id}" data-profileid="${profile.id}">✨ 填充</button>
             <button class="pact toggle" data-pid="${p.id}" data-profileid="${profile.id}">▼</button>
           </div>
@@ -273,12 +277,51 @@ function renderPresets() {
   container.querySelectorAll('.pact.fill').forEach(btn => {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
+      e.stopImmediatePropagation();
       const profile = profiles.find(p => p.id === btn.dataset.profileid);
       if (profile) await fillWithPreset(profile, btn.dataset.pid);
     });
   });
 
-  // Toggle detail
+  // Jump buttons — open URL in new tab and then fill
+  container.querySelectorAll('.pact.jump').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      const profile = profiles.find(p => p.id === btn.dataset.profileid);
+      const preset  = profile?.presets.find(p => p.id === btn.dataset.pid);
+      if (!profile || !preset || !preset.autoFill?.jumpFill?.url) {
+        showToast('跳转配置不完整', 'error');
+        return;
+      }
+      
+      try {
+        // 打开新标签页
+        const newTab = await chrome.tabs.create({ url: preset.autoFill.jumpFill.url });
+        
+        // 等待页面加载后执行填充
+        setTimeout(async () => {
+          if (newTab.id) {
+            await chrome.scripting.executeScript({ target: { tabId: newTab.id }, files: ['content.js'] }).catch(() => {});
+            const fieldMap = {};
+            (profile.fields || []).forEach(f => { fieldMap[f.id] = { selector: f.selector, type: f.type }; });
+            const resp = await chrome.tabs.sendMessage(newTab.id, { action: 'fillDirect', config: preset.data, fieldMap });
+            if (resp?.result?.success > 0) {
+              showToast(`✅ 跳转并填充成功 ${resp.result.success} 个字段`, 'success');
+            } else {
+              showToast('⚠️ 跳转成功，但填充失败', 'warning');
+            }
+          }
+        }, 1500);
+        
+        showToast(`🔗 正在跳转到目标页面...`, 'info');
+      } catch (err) {
+        showToast('⚠️ 跳转失败：' + err.message, 'error');
+      }
+    });
+  });
+
+  // Toggle detail — 展开时只显示当前预设，隐藏其他
   container.querySelectorAll('.pact.toggle').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
@@ -286,16 +329,27 @@ function renderPresets() {
       const profileId = btn.dataset.profileid;
       const panel     = document.getElementById(`pd-${pid}`);
       const open      = panel.classList.contains('open');
+
+      // Close all open details first
       document.querySelectorAll('.pdetail.open').forEach(p => { p.classList.remove('open'); p.innerHTML = ''; });
       document.querySelectorAll('.pact.toggle').forEach(b => b.textContent = '▼');
+      // Restore all hidden cards
+      container.querySelectorAll('.pcard').forEach(c => c.style.display = '');
+
       if (!open) {
         const profile = profiles.find(p => p.id === profileId);
         const preset  = profile?.presets.find(p => p.id === pid);
         if (preset && profile) {
-          panel.innerHTML = buildDetailHTML(preset, profile);
+          const _bDH = window.buildDetailHTML || buildDetailHTML;
+          const _bDE = window.bindDetailEvents || bindDetailEvents;
+          panel.innerHTML = _bDH(preset, profile);
           panel.classList.add('open');
           btn.textContent = '▲';
-          bindDetailEvents(panel, preset, profile);
+          _bDE(panel, preset, profile);
+          // Hide all OTHER cards
+          container.querySelectorAll('.pcard').forEach(c => {
+            if (c.dataset.pid !== pid) c.style.display = 'none';
+          });
         }
       }
     });
@@ -353,11 +407,11 @@ function buildDetailHTML(preset, profile) {
     </div>
 
     <div class="detail-acts">
-      <button class="btn btn-ok btn-sm" data-act="use" style="flex:1;justify-content:center;">✨ 填充</button>
-      <button class="btn btn-p btn-sm"  data-act="save" style="flex:1;justify-content:center;">💾 保存</button>
-      <button class="btn btn-g btn-sm"  data-act="def" style="flex:1;justify-content:center;">⭐ 默认</button>
-      <button class="btn btn-g btn-sm"  data-act="exp" style="flex:1;justify-content:center;">📤 导出</button>
-      <button class="btn btn-err btn-sm" data-act="del" style="flex:1;justify-content:center;">🗑️</button>
+      <button class="btn btn-ok btn-sm dact" data-act="use">✨ 填充</button>
+      <button class="btn btn-p btn-sm dact"  data-act="save">💾 保存</button>
+      <button class="btn btn-g btn-sm dact"  data-act="def">⭐ 默认</button>
+      <button class="btn btn-g btn-sm dact"  data-act="copy" title="复制文本信息">📋 复制</button>
+      <button class="btn btn-err btn-sm dact" data-act="del">🗑️ 删除</button>
     </div>`;
 }
 
@@ -406,7 +460,9 @@ function bindDetailEvents(panel, preset, profile) {
   }
 
   // Fill: use live DOM values (from whichever view is active)
-  panel.querySelector('[data-act="use"]')?.addEventListener('click', () => {
+  panel.querySelector('[data-act="use"]')?.addEventListener('click', e => {
+    e.stopPropagation();
+    e.stopImmediatePropagation();
     const data = _collectData(panel, profile);
     fillWithData(profile, data);
   });
@@ -463,13 +519,42 @@ function _collectData(panel, profile) {
 // Parse "字段名：值" text into {fieldId: value}
 function _parseTextToData(text, profile) {
   const data = {};
+  const fields = profile.fields || [];
+  // Build a name→id map (case-insensitive)
+  const nameMap = {};
+  fields.forEach(f => { nameMap[f.name.toLowerCase()] = f.id; });
+
   const lines = text.split('\n');
+  let curFieldId = null;
+
   lines.forEach(line => {
-    const m = line.match(/^(.+?)[:：]\s*(.*)/);
-    if (!m) return;
-    const name = m[1].trim(), val = m[2].trim();
-    const field = (profile.fields || []).find(f => f.name === name || f.name.toLowerCase() === name.toLowerCase());
-    if (field) data[field.id] = val;
+    // Try to match "字段名：值" pattern
+    const m = line.match(/^([^：:]+)[:：]\s*(.*)/);
+    if (m) {
+      const name = m[1].trim();
+      const fid  = nameMap[name.toLowerCase()];
+      if (fid !== undefined) {
+        // Known field → start new field
+        curFieldId = fid;
+        data[fid]  = m[2];
+      } else {
+        // Contains ":" but not a known field name
+        // → treat entire line as continuation of current field
+        if (curFieldId !== undefined && data[curFieldId] !== undefined) {
+          data[curFieldId] += '\n' + line;
+        }
+        // Do NOT reset curFieldId — stay in current field context
+      }
+    } else {
+      // No ":" at all → always continuation
+      if (curFieldId !== undefined && data[curFieldId] !== undefined) {
+        data[curFieldId] += '\n' + line;
+      }
+    }
+  });
+  // Trim trailing newlines/whitespace per field
+  Object.keys(data).forEach(k => {
+    if (typeof data[k] === 'string') data[k] = data[k].replace(/\n+$/, '').trimEnd();
   });
   return data;
 }
@@ -1167,3 +1252,413 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function hideCtx() { document.getElementById('ctx-menu').classList.remove('show'); }
+
+
+
+
+// ════════════════════════════════════════════
+//  AUTO-FILL v4 — Final
+//  修复项：
+//  1. 展开时隐藏其他预设 ✅ (done in renderPresets)
+//  2. dtab 未选中也显示边框 ✅
+//  3. 输入框改为淡灰 / tint 背景 ✅
+//  4. 多行内容双向同步修复 ✅ (done in _parseTextToData)
+//  5. 填充配置Tab保留顶部入口，去掉底部按钮 ✅
+//  6. IO 面板紧凑化 ✅ (done in HTML)
+// ════════════════════════════════════════════
+
+// ── Build auto-fill config HTML ──────────────────
+function buildAutoFillHTML(preset) {
+  const af       = preset.autoFill || { enabled:false, rules:[], delay:800, overwrite:true, jumpFill:{enabled:false, url:''} };
+  const enabled  = !!af.enabled;
+  const rules    = af.rules || [];
+  const activeN  = rules.filter(r => r.active !== false && r.url).length;
+  const delay    = af.delay ?? 800;
+  const overwrite = af.overwrite !== false;
+  
+  // 跳转填充配置
+  const jumpFill = af.jumpFill || { enabled:false, url:'' };
+  const jumpFillEnabled = !!jumpFill.enabled;
+  const jumpFillUrl = jumpFill.url || '';
+
+  const modeMap  = { contains:'包含', exact:'精确', prefix:'前缀', suffix:'后缀', regex:'正则' };
+
+  const rulesHTML = rules.map((rule, idx) => {
+    const opts = Object.entries(modeMap).map(([v, l]) =>
+      `<option value="${v}"${rule.mode===v?' selected':''}>${l}</option>`).join('');
+    const isActive = rule.active !== false;
+    return `<div class="afc-rule-item${isActive?'':' disabled'}" data-ridx="${idx}">
+      <label class="afc-rule-checkbox">
+        <input type="checkbox" ${isActive?'checked':''}>
+        <div class="afc-checkbox-box"></div>
+      </label>
+      <select class="afc-rule-select">${opts}</select>
+      <input class="afc-rule-url" type="text" value="${esc(rule.url||'')}" placeholder="URL 关键词、完整地址或正则表达式">
+      <div class="afc-rule-delay">
+        <input type="number" value="${rule.delay??delay}" min="0" max="9999" step="100">
+        <span>ms</span>
+      </div>
+      <button class="afc-rule-delete">✕</button>
+    </div>`;
+  }).join('');
+
+  return `
+    <!-- 填充配置全部在一个方框 -->
+    <div class="afc-container">
+      <div class="afc-group">
+        <!-- 头部：自动填充总开关 -->
+        <div class="afc-group-header">
+          <div class="afc-header-left">
+            <div class="afc-status-dot${enabled?' active':' disabled'}"></div>
+            <div class="afc-header-text">
+              <span class="afc-group-title">自动填充</span>
+              <span class="afc-header-desc">页面加载时自动填充预设内容</span>
+            </div>
+          </div>
+          <div class="afc-header-right">
+            ${activeN>0 ? `<span class="afc-rule-count">${activeN} 规则</span>` : ''}
+            <label class="afc-switch">
+              <input type="checkbox" id="af-preset-en" ${enabled?'checked':''}>
+              <div class="afc-switch-track"></div>
+              <div class="afc-switch-thumb"></div>
+            </label>
+          </div>
+        </div>
+        
+        <!-- 基本设置 -->
+        <div class="afc-settings-group afc-auto-content${enabled?'':' disabled'}">
+          <div class="afc-section-label">⚙️ 基本设置</div>
+          <div class="afc-setting-item">
+            <div class="afc-setting-label">
+              <span>全局延迟</span>
+              <span class="afc-setting-hint">页面加载后延迟填充</span>
+            </div>
+            <div class="afc-setting-value">
+              <input id="af-global-delay" type="number" class="afc-number-input" value="${delay}" min="0" max="9999" step="100">
+              <span class="afc-unit">ms</span>
+            </div>
+          </div>
+          <div class="afc-setting-item">
+            <div class="afc-setting-label">
+              <span>覆盖已填内容</span>
+              <span class="afc-setting-hint">关闭后只填充空白字段</span>
+            </div>
+            <label class="afc-switch-small">
+              <input type="checkbox" id="af-overwrite" ${overwrite?'checked':''}>
+              <div class="afc-switch-track"></div>
+              <div class="afc-switch-thumb"></div>
+            </label>
+          </div>
+        </div>
+        
+        <div class="afc-divider"></div>
+        
+        <!-- 跳转填充 -->
+        <div class="afc-settings-group afc-auto-content${enabled?'':' disabled'}">
+          <div class="afc-setting-item">
+            <div class="afc-setting-label">
+              <span class="afc-jump-title">🔗 启用跳转填充</span>
+            </div>
+            <label class="afc-switch-small">
+              <input type="checkbox" id="af-jump-en" ${jumpFillEnabled?'checked':''}>
+              <div class="afc-switch-track"></div>
+              <div class="afc-switch-thumb"></div>
+            </label>
+          </div>
+          <div class="afc-setting-item">
+            <input id="af-jump-url" type="text" class="afc-url-input" 
+                   value="${esc(jumpFillUrl)}" placeholder="https://example.com/form">
+          </div>
+        </div>
+        
+        <div class="afc-divider"></div>
+        
+        <!-- URL规则 -->
+        <div class="afc-auto-content${enabled?'':' disabled'}">
+          <div class="afc-group-header afc-no-bg">
+            <span class="afc-group-title">🔗 URL 触发规则</span>
+            <button class="afc-add-rule-btn" id="af-add-rule-btn">＋ 添加规则</button>
+          </div>
+          <div class="afc-mode-tags">
+            <span class="afc-mode-tag"><b>包含</b>URL含词</span>
+            <span class="afc-mode-tag"><b>精确</b>完全一致</span>
+            <span class="afc-mode-tag"><b>前缀</b>开头匹配</span>
+            <span class="afc-mode-tag"><b>后缀</b>结尾匹配</span>
+            <span class="afc-mode-tag"><b>正则</b>regex</span>
+          </div>
+          <div id="af-rules-list" class="afc-rules-container">
+            ${rulesHTML || `<div class="afc-empty-state">暂无规则，点击上方「＋ 添加规则」</div>`}
+          </div>
+        </div>
+        
+        <!-- 提示信息 -->
+        <div class="afc-tip-box">
+          💡 满足任意一条URL规则即触发自动填充；规则延迟优先于全局延迟设置。
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── Bind auto-fill panel ──────────────────────────
+function bindAutoFillEvents(panel, preset) {
+  const getAF = () => {
+    if (!preset.autoFill) preset.autoFill = { enabled:false, rules:[], delay:800, overwrite:true };
+    return preset.autoFill;
+  };
+
+  const enCb  = panel.querySelector('#af-preset-en');
+  const autoContents = panel.querySelectorAll('.afc-auto-content');
+  const dot   = panel.querySelector('.afc-status-dot');
+
+  if (enCb) {
+    enCb.addEventListener('change', () => {
+      autoContents.forEach(el => el.classList.toggle('disabled', !enCb.checked));
+      dot?.classList.toggle('active', enCb.checked);
+      dot?.classList.toggle('disabled', !enCb.checked);
+    });
+  }
+
+  function collectRules() {
+    return [...panel.querySelectorAll('.afc-rule-item')].map(row => ({
+      mode:   row.querySelector('.afc-rule-select')?.value || 'contains',
+      url:    row.querySelector('.afc-rule-url')?.value?.trim() || '',
+      delay:  parseInt(row.querySelector('.afc-rule-delay input')?.value || '', 10) || null,
+      active: row.querySelector('.afc-rule-checkbox input')?.checked !== false,
+    })).filter(r => r.url);
+  }
+
+  function makeOpts(sel) {
+    return ['contains','exact','prefix','suffix','regex'].map(v =>
+      `<option value="${v}"${v===sel?' selected':''}>${{contains:'包含',exact:'精确',prefix:'前缀',suffix:'后缀',regex:'正则'}[v]}</option>`
+    ).join('');
+  }
+
+  function addRuleRow(rule) {
+    const list = panel.querySelector('#af-rules-list');
+    if (!list) return;
+    const ph = list.querySelector('.afc-empty-state');
+    if (ph) ph.remove();
+    const row = document.createElement('div');
+    row.className = 'afc-rule-item';
+    const gDelay = panel.querySelector('#af-global-delay')?.value || '800';
+    row.innerHTML = `
+      <label class="afc-rule-checkbox">
+        <input type="checkbox" ${rule?.active!==false?'checked':''}>
+        <div class="afc-checkbox-box"></div>
+      </label>
+      <select class="afc-rule-select">${makeOpts(rule?.mode||'contains')}</select>
+      <input class="afc-rule-url" type="text" value="${esc(rule?.url||'')}" placeholder="URL 关键词、完整地址或正则表达式">
+      <div class="afc-rule-delay">
+        <input type="number" value="${rule?.delay||gDelay}" min="0" max="9999" step="100">
+        <span>ms</span>
+      </div>
+      <button class="afc-rule-delete">✕</button>`;
+    row.querySelector('.afc-rule-checkbox input').addEventListener('change', function() { row.classList.toggle('disabled', !this.checked); });
+    row.querySelector('.afc-rule-delete').addEventListener('click', () => row.remove());
+    list.appendChild(row);
+    row.querySelector('.afc-rule-url')?.focus();
+  }
+
+  panel.querySelectorAll('.afc-rule-item').forEach(row => {
+    row.querySelector('.afc-rule-checkbox input')?.addEventListener('change', function() { row.classList.toggle('disabled', !this.checked); });
+    row.querySelector('.afc-rule-delete')?.addEventListener('click', () => row.remove());
+  });
+  panel.querySelector('#af-add-rule-btn')?.addEventListener('click', () => addRuleRow(null));
+
+  panel._collectAutoFill = () => ({
+    enabled:  enCb?.checked ?? false,
+    rules:    collectRules(),
+    delay:    parseInt(panel.querySelector('#af-global-delay')?.value||'800', 10),
+    overwrite: panel.querySelector('#af-overwrite')?.checked !== false,
+    jumpFill: {
+      enabled: panel.querySelector('#af-jump-en')?.checked ?? false,
+      url:     panel.querySelector('#af-jump-url')?.value?.trim() || '',
+    },
+  });
+}
+
+// ── buildDetailHTML (final override) ─────────────
+window.buildDetailHTML = function(preset, profile) {
+  const fields = profile.fields || [];
+
+  // grid: respect fullWidth and textarea
+  const gridHTML = fields.map(f => {
+    const val    = preset.data?.[f.id] ?? '';
+    const isFull = f.fullWidth===1 || f.type==='textarea' || String(val).includes('\n') || String(val).length > 60;
+    const inp    = isFull
+      ? `<textarea class="dfi dfi-inp" data-fid="${f.id}" rows="2">${esc(val)}</textarea>`
+      : `<input class="dfi dfi-inp" type="text" data-fid="${f.id}" value="${esc(val)}">`;
+    return `<div class="dfield ${isFull?'full':''}"><div class="dlbl">${esc(f.name)}</div>${inp}</div>`;
+  }).join('');
+
+  // text view: name：value per field, multiline values preserved
+  const previewText = fields.map(f => {
+    const val = preset.data?.[f.id] ?? '';
+    return `${f.name}：${val}`;
+  }).join('\n');
+
+  const afHTML    = buildAutoFillHTML(preset);
+  const afEnabled = preset.autoFill?.enabled;
+  const afCount   = (preset.autoFill?.rules||[]).filter(r=>r.active!==false&&r.url).length;
+  const afBadge   = (afEnabled && afCount>0) ? `<span class="af-btn-indicator">${afCount}</span>` : '';
+
+  return `
+    <div class="detail-meta">
+      <input class="dfi-meta" id="dn-${preset.id}" value="${esc(preset.name)}" placeholder="预设名称" style="flex:2;">
+      <input class="dfi-meta" id="dt-${preset.id}" value="${esc((preset.tags||[]).join(', '))}" placeholder="标签（逗号分隔）" style="flex:3;">
+    </div>
+
+    <div class="dtab-bar">
+      <button class="dtab active" data-dtab="edit">✏️ 字段编辑</button>
+      <button class="dtab" data-dtab="text">📄 文本</button>
+      <button class="dtab" data-dtab="af">⚙️ 填充配置${afBadge}</button>
+    </div>
+
+    <div class="dtab-panel active" data-dtabp="edit">
+      <div class="detail-grid">
+        ${gridHTML || '<div style="color:var(--t2);font-size:12px;grid-column:1/-1;text-align:center;padding:14px;">此 Profile 暂无字段，请先在「字段配置」添加。</div>'}
+      </div>
+    </div>
+
+    <div class="dtab-panel" data-dtabp="text">
+      <textarea class="dfi-text" id="ptxt-${preset.id}" spellcheck="false" style="min-height:200px;">${esc(previewText)}</textarea>
+      <div style="font-size:10.5px;color:var(--t2);margin-top:4px;">格式：每行 <code>字段名：值</code>，多行值直接换行即可</div>
+    </div>
+
+    <div class="dtab-panel" data-dtabp="af">
+      ${afHTML}
+    </div>
+
+    <div class="detail-acts">
+      <button class="btn btn-ok btn-sm dact" data-act="use">✨ 填充</button>
+      <button class="btn btn-p btn-sm dact" data-act="save">💾 保存</button>
+      <button class="btn btn-g btn-sm dact" data-act="def" title="设为全局默认">⭐ 默认</button>
+      <button class="btn btn-g btn-sm dact" data-act="copy" title="复制文本信息">📋 复制</button>
+      <button class="btn btn-err btn-sm dact" data-act="del">🗑️ 删除</button>
+    </div>`;
+};
+
+// ── bindDetailEvents (final override) ────────────
+window.bindDetailEvents = function(panel, preset, profile) {
+
+  // Tab switching with proper multiline sync
+  panel.querySelectorAll('.dtab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.dataset.dtab;
+      const cur    = panel.querySelector('.dtab-panel.active');
+
+      // Leaving text → sync back to edit
+      if (cur?.dataset.dtabp === 'text' && target !== 'text') {
+        const ta = panel.querySelector(`#ptxt-${preset.id}`);
+        if (ta) _parseTextIntoInputs(ta.value, panel, profile);
+      }
+      // Entering text → sync from edit
+      if (target === 'text') {
+        const ta = panel.querySelector(`#ptxt-${preset.id}`);
+        if (ta) {
+          // Collect current values from edit inputs (preserve multiline)
+          const lines = (profile.fields||[]).map(f => {
+            const inp = panel.querySelector(`.dfi[data-fid="${f.id}"]`);
+            const val = inp ? inp.value : (preset.data?.[f.id] ?? '');
+            return `${f.name}：${val}`;
+          });
+          ta.value = lines.join('\n');
+        }
+      }
+
+      panel.querySelectorAll('.dtab').forEach(t => t.classList.toggle('active', t===tab));
+      panel.querySelectorAll('.dtab-panel').forEach(p => p.classList.toggle('active', p.dataset.dtabp===target));
+    });
+  });
+
+  // Track changes
+  panel.querySelectorAll('.dfi').forEach(inp => {
+    inp.addEventListener('input', () => panel.querySelector('[data-act="save"]')?.classList.add('has-changes'));
+  });
+  panel.querySelector(`#ptxt-${preset.id}`)?.addEventListener('input', () => {
+    panel.querySelector('[data-act="save"]')?.classList.add('has-changes');
+  });
+
+  // Bind auto-fill tab
+  bindAutoFillEvents(panel, preset);
+
+  // ✨ Fill — only current panel values, stopPropagation to prevent double fire
+  panel.querySelector('[data-act="use"]')?.addEventListener('click', e => {
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    const data = _collectDetailData(panel, profile);
+    fillWithData(profile, data);
+  });
+
+  // 💾 Save
+  panel.querySelector('[data-act="save"]')?.addEventListener('click', async e => {
+    e.stopPropagation();
+    const name  = panel.querySelector(`#dn-${preset.id}`)?.value.trim();
+    const tags  = panel.querySelector(`#dt-${preset.id}`)?.value.split(',').map(t=>t.trim()).filter(Boolean);
+    const data  = _collectDetailData(panel, profile);
+    if (panel._collectAutoFill) preset.autoFill = panel._collectAutoFill();
+    const p = profile.presets.find(x => x.id===preset.id);
+    if (p) { p.name=name||p.name; p.tags=tags; p.data=data; p.autoFill=preset.autoFill; }
+    await saveProfiles();
+    panel.querySelector('[data-act="save"]')?.classList.remove('has-changes');
+    renderPresets();
+    showToast('💾 预设已保存', 'success');
+  });
+
+  // ⭐ Set default
+  panel.querySelector('[data-act="def"]')?.addEventListener('click', async e => {
+    e.stopPropagation();
+    setGlobalDefault(profile.id, preset.id);
+    await saveProfiles(); renderPresets();
+    showToast('⭐ 已设为全局默认', 'success');
+  });
+
+  // 📋 Copy — 复制字段文本信息到剪贴板
+  panel.querySelector('[data-act="copy"]')?.addEventListener('click', async e => {
+    e.stopPropagation();
+    // 收集当前字段值，格式：字段名：值
+    const fields = profile.fields || [];
+    const lines = fields
+      .map(f => {
+        const inp = panel.querySelector(`.dfi[data-fid="${f.id}"]`);
+        const val = inp ? inp.value : (preset.data?.[f.id] ?? '');
+        return val ? `${f.name}：${val}` : null;
+      })
+      .filter(Boolean);
+    const text = lines.join('\n');
+    if (!text) { showToast('⚠️ 暂无可复制的内容', 'warning'); return; }
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('📋 已复制到剪贴板', 'success');
+    } catch (err) {
+      // fallback
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      showToast('📋 已复制到剪贴板', 'success');
+    }
+  });
+
+  // 🗑️ Delete
+  panel.querySelector('[data-act="del"]')?.addEventListener('click', async e => {
+    e.stopPropagation();
+    if (!confirm(`确定删除预设「${preset.name}」？`)) return;
+    profile.presets = profile.presets.filter(p=>p.id!==preset.id);
+    await saveProfiles(); renderPresets();
+    showToast('🗑️ 已删除', 'info');
+  });
+};
+
+// ── Collect data from active detail tab ────────
+function _collectDetailData(panel, profile) {
+  const active = panel.querySelector('.dtab-panel.active');
+  if (active?.dataset.dtabp === 'text') {
+    const ta = active.querySelector('textarea');
+    if (ta) return _parseTextToData(ta.value, profile);
+  }
+  const data = {};
+  panel.querySelectorAll('.dfi[data-fid]').forEach(inp => { data[inp.dataset.fid] = inp.value; });
+  return data;
+}

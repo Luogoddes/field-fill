@@ -247,3 +247,190 @@
   });
 
 })();
+
+
+
+// ════════════════════════════════════════════
+//  AUTO-FILL ON PAGE LOAD v3
+//  支持 overwrite 开关：关闭时只填充空白字段
+//  不依赖全局开关，只要 preset.autoFill.enabled=true 有规则即生效
+//  ⚠️ 自动填充策略：每次页面加载（包括刷新）都执行，手动填充后同一页面内不再重复触发
+// ════════════════════════════════════════════
+(function initAutoFill() {
+
+  // 页面级别状态：标记当前页面是否已执行过自动填充
+  // 使用内存变量 + localStorage 时间戳组合方式
+  // - 内存变量：防止同一页面内重复触发
+  // - localStorage + timestamp：刷新页面时重新执行
+  const AUTO_FILL_KEY = '__uff_auto_fill_' + encodeURIComponent(location.href);
+  let hasFilledInPage = false;
+  
+  function shouldAutoFill() {
+    if (hasFilledInPage) return false;
+    
+    try {
+      const stored = localStorage.getItem(AUTO_FILL_KEY);
+      if (stored) {
+        const { timestamp } = JSON.parse(stored);
+        // 如果上次填充是在5秒内，则跳过（防止快速刷新重复触发）
+        if (Date.now() - timestamp < 5000) {
+          return false;
+        }
+      }
+    } catch (_) {}
+    
+    return true;
+  }
+  
+  function markAutoFillDone() {
+    hasFilledInPage = true;
+    try {
+      localStorage.setItem(AUTO_FILL_KEY, JSON.stringify({ timestamp: Date.now() }));
+      // 5秒后自动清除，确保刷新页面能重新触发
+      setTimeout(() => {
+        localStorage.removeItem(AUTO_FILL_KEY);
+      }, 5000);
+    } catch (_) {}
+  }
+
+  function urlMatches(mode, ruleUrl, pageUrl) {
+    if (!ruleUrl) return false;
+    try {
+      switch (mode) {
+        case 'exact':    return pageUrl === ruleUrl || pageUrl.replace(/\/$/, '') === ruleUrl.replace(/\/$/, '');
+        case 'contains': return pageUrl.includes(ruleUrl);
+        case 'prefix':   return pageUrl.startsWith(ruleUrl);
+        case 'suffix':   return pageUrl.endsWith(ruleUrl);
+        case 'regex':    return new RegExp(ruleUrl).test(pageUrl);
+        default:         return pageUrl.includes(ruleUrl);
+      }
+    } catch (_) { return false; }
+  }
+
+  function autoFill(config, fieldMap, overwrite) {
+    let s = 0, f = 0;
+    for (const [fid, def] of Object.entries(fieldMap)) {
+      const val = config[fid];
+      if (!val || !String(val).trim()) continue;
+      const el = document.querySelector(def.selector);
+      if (!el) { f++; continue; }
+
+      // overwrite=false 时跳过已有值的字段
+      if (!overwrite) {
+        const cur = el.tagName === 'SELECT' ? el.value : el.value;
+        if (cur && cur.trim()) continue;
+      }
+
+      try {
+        if (def.type === 'select') {
+          const v = String(val).trim().toLowerCase(); let ok = false;
+          for (let i = 0; i < el.options.length && !ok; i++)
+            if (el.options[i].value.trim().toLowerCase() === v ||
+                el.options[i].textContent.trim().toLowerCase() === v)
+              { el.value = el.options[i].value; ok = true; }
+          for (let i = 0; i < el.options.length && !ok; i++)
+            if (el.options[i].value.toLowerCase().includes(v) ||
+                el.options[i].textContent.toLowerCase().includes(v))
+              { el.value = el.options[i].value; ok = true; }
+          if (ok) { el.dispatchEvent(new Event('change', { bubbles: true })); s++; } else f++;
+        } else {
+          const proto  = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+          setter ? setter.call(el, String(val)) : (el.value = String(val));
+          el.dispatchEvent(new Event('input',  { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          s++;
+        }
+      } catch (_) { f++; }
+    }
+    return { s, f };
+  }
+
+  function showAutoToast(msg, type) {
+    // 确保样式已注入
+    if (!document.getElementById('__uff_style__')) return;
+    const t = document.createElement('div');
+    t.className = `uff-toast ${type}`; t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => {
+      t.style.transition = 'opacity .3s';
+      t.style.opacity = '0';
+      setTimeout(() => t.remove(), 320);
+    }, 4000);
+  }
+
+  async function run() {
+    try {
+      // ⚠️ 检查：如果不应该自动填充（同一页面已填充过），则跳过
+      if (!shouldAutoFill()) {
+        console.debug('[UFF] auto-fill skipped: already done in this page session');
+        return;
+      }
+
+      const { profiles } = await new Promise(r => chrome.storage.local.get('profiles', r));
+      if (!profiles?.length) return;
+      const pageUrl = location.href;
+
+      // 按延迟分组，同延迟的合并填充
+      const byDelay = {};
+      profiles.forEach(profile => {
+        (profile.presets || []).forEach(preset => {
+          const af = preset.autoFill;
+          if (!af?.enabled) return;
+          const globalDelay  = af.delay ?? 800;
+          const overwrite    = af.overwrite !== false;
+          const activeRules  = (af.rules || []).filter(r => r.active !== false && r.url);
+
+          activeRules.forEach(rule => {
+            if (!urlMatches(rule.mode, rule.url, pageUrl)) return;
+            // 规则自身延迟优先，否则用 preset 全局延迟
+            const delay = (rule.delay != null && !isNaN(rule.delay)) ? rule.delay : globalDelay;
+            if (!byDelay[delay]) byDelay[delay] = [];
+            byDelay[delay].push({ profile, preset, overwrite });
+          });
+        });
+      });
+
+      Object.entries(byDelay).forEach(([delayStr, group]) => {
+        setTimeout(() => {
+          // ⚠️ 执行自动填充前再次检查，防止重复触发
+          if (!shouldAutoFill()) {
+            console.debug('[UFF] auto-fill skipped: already done in this page session');
+            return;
+          }
+          
+          // ⚠️ 标记自动填充已执行（在实际填充前标记，防止重复）
+          markAutoFillDone();
+
+          let totalS = 0, totalF = 0;
+          const names = [];
+          const seen = new Set();
+          group.forEach(({ profile, preset, overwrite }) => {
+            if (seen.has(preset.id)) return;
+            seen.add(preset.id);
+            names.push(preset.name);
+            const fieldMap = {};
+            (profile.fields || []).forEach(f => {
+              fieldMap[f.id] = { selector: f.selector, type: f.type };
+            });
+            const res = autoFill(preset.data || {}, fieldMap, overwrite);
+            totalS += res.s; totalF += res.f;
+          });
+          if (totalS > 0) {
+            showAutoToast(`🤖 自动填充：${names.join('、')} — 成功 ${totalS} 个字段`, 'success');
+          } else if (totalF > 0) {
+            showAutoToast('🤖 自动填充：URL 匹配成功，但字段选择器未找到，请检查配置', 'warning');
+          }
+        }, parseInt(delayStr, 10));
+      });
+    } catch (e) {
+      console.debug('[UFF] auto-fill v3:', e.message);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', run);
+  } else {
+    run();
+  }
+})();
