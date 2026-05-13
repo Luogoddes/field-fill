@@ -296,12 +296,16 @@ function renderPresets() {
       }
       
       try {
-        // 打开新标签页
         const newTab = await chrome.tabs.create({ url: preset.autoFill.jumpFill.url });
+        if (!newTab?.id) { showToast('⚠️ 无法创建标签页', 'error'); return; }
         
-        // 等待页面加载后执行填充
-        setTimeout(async () => {
-          if (newTab.id) {
+        const MAX_WAIT = 20000;
+        let fillDone = false;
+
+        const doJumpFill = async () => {
+          if (fillDone || !newTab.id) return;
+          fillDone = true;
+          try {
             await chrome.scripting.executeScript({ target: { tabId: newTab.id }, files: ['content.js'] }).catch(() => {});
             const fieldMap = {};
             (profile.fields || []).forEach(f => { fieldMap[f.id] = { selector: f.selector, type: f.type }; });
@@ -311,8 +315,25 @@ function renderPresets() {
             } else {
               showToast('⚠️ 跳转成功，但填充失败', 'warning');
             }
+          } catch (e) {
+            showToast('⚠️ 填充失败：' + e.message, 'warning');
           }
-        }, 1500);
+        };
+
+        // 监听页面加载完成
+        const listener = (tabId, changeInfo) => {
+          if (tabId === newTab.id && changeInfo.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            setTimeout(doJumpFill, 600);
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+
+        // 超时降级（20 秒后仍执行）
+        setTimeout(() => {
+          chrome.tabs.onUpdated.removeListener(listener);
+          doJumpFill();
+        }, MAX_WAIT);
         
         showToast(`🔗 正在跳转到目标页面...`, 'info');
       } catch (err) {
@@ -1096,7 +1117,15 @@ async function importAll() {
 async function importProfile() {
   const j=await importFile(); if(!j) return;
   if(j._type!=='uff-profile'||!j.profile){showToast('⚠️ 需要 uff-profile 格式','error');return;}
-  const np={...j.profile,id:'profile-'+uid(),isActive:false};
+  // Validate structure
+  const pf=j.profile;
+  if(!pf.name||typeof pf.name!=='string'){showToast('⚠️ 缺少有效的 Profile 名称','error');return;}
+  if(!Array.isArray(pf.fields)) pf.fields=[];
+  if(!Array.isArray(pf.presets)) pf.presets=[];
+  if(!Array.isArray(pf.tags)) pf.tags=[];
+  pf.presets=pf.presets.filter(p=>p&&p.id&&p.name).map(p=>({...p,data:p.data||{},tags:p.tags||[],autoFill:p.autoFill||null}));
+  pf.fields=pf.fields.filter(f=>f&&f.id&&f.selector).map(f=>({...f,type:f.type||'text',fullWidth:f.fullWidth||0}));
+  const np={...pf,id:'profile-'+uid(),isActive:false};
   profiles.push(np); activeProfileId=np.id;
   await saveProfiles(); renderProfileChips(); renderPresets();
   showToast(`✅ Profile「${np.name}」导入成功`,'success');
@@ -1129,6 +1158,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('about-close').addEventListener('click', () => document.getElementById('about-ov').classList.remove('show'));
   document.getElementById('about-ov').addEventListener('click', e=>{ if(e.target===e.currentTarget) e.currentTarget.classList.remove('show'); });
   document.getElementById('github-link').addEventListener('click', e=>{ e.preventDefault(); chrome.tabs.create({url:'https://github.com/Luogoddes/field-fill'}); });
+  document.getElementById('issues-link').addEventListener('click', e=>{ e.preventDefault(); chrome.tabs.create({url:'https://github.com/Luogoddes/field-fill/issues'}); });
 
   // Tabs
   document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => switchPanel(t.dataset.panel)));

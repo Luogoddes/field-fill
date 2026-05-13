@@ -384,7 +384,7 @@
 
       if (totalS > 0) {
         markAutoFillDone();
-        showAutoToast('[AutoFill] ' + names.join(', ') + ' - ' + totalS + ' fields filled', 'success');
+        showAutoToast('🤖 自动填充：' + names.join('、') + ' — 成功 ' + totalS + ' 个字段', 'success');
         cleanup();
         return;
       }
@@ -402,7 +402,7 @@
         setTimeout(function() { if (observer) { observer.disconnect(); observer = null; } }, retryDelay);
       } else if (totalF > 0) {
         markAutoFillDone();
-        showAutoToast('[AutoFill] URL matched but selectors not found - check config', 'warning');
+        showAutoToast('🤖 自动填充：URL 匹配成功，但字段选择器未找到，请检查配置', 'warning');
         cleanup();
       }
 

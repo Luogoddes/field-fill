@@ -45,10 +45,17 @@
 
 ## 🚀 安装方法
 
-### 方法一：从 Chrome Web Store 安装
+### 方法一：从 Edge 扩展商店安装（推荐）
+已上架 Microsoft Edge Add-ons，扩展名称为 **字段填充**。
+
+[![Edge Add-ons](https://img.shields.io/badge/Edge-Add--ons-0078D7?logo=microsoftedge)](https://microsoftedge.microsoft.com/addons/detail/%E5%AD%97%E6%AE%B5%E5%A1%AB%E5%85%85/aekjpmdkkenfoclhkmmjjchnebfaopej?hl=zh-CN)
+
+👉 [前往 Edge 扩展商店安装](https://microsoftedge.microsoft.com/addons/detail/%E5%AD%97%E6%AE%B5%E5%A1%AB%E5%85%85/aekjpmdkkenfoclhkmmjjchnebfaopej?hl=zh-CN)
+
+### 方法二：从 Chrome Web Store 安装
 （待发布）
 
-### 方法二：手动安装（开发者模式）
+### 方法三：手动安装（开发者模式）
 1. 下载本项目的 ZIP 包并解压
 2. 打开 Chrome/Edge 浏览器，访问 `chrome://extensions/`
 3. 开启 "开发者模式"
@@ -108,10 +115,17 @@ MIT License
 
 ---
 
+## 💬 反馈与建议
+
+如有 Bug 或新功能需求，欢迎到 [GitHub Issues](https://github.com/Luogoddes/field-fill/issues) 提出。
+
 ## Changelog
 
 ### v1.4.3 (2026-05-13)
-- 🐛 修复 Bug A：SPA 路由跳转后自动填充失效（添加 history.pushState/replaceState 拦截和 popstate 监听）
+- 🐛 修复 Bug A：SPA 路由跳转后自动填充失效（添加 history.pushState/replaceState 拦截 + popstate 监听）
 - 🐛 修复 Bug B：首次打开/刷新时自动填充行为不一致（添加 MutationObserver 重试机制，最多重试 10 次）
 - 🐛 修复 Bug C：手动填充后自动填充重复覆盖数据（共享填充状态，手动填充时抑制后续自动填充）
-- ✨ 新增共享自动填充状态管理，提高 fillDirect / fillFields 与自动填充的协调性
+- 🐛 修复自动填充 Toast 提示为英文的问题（恢复中文 + 🤖 图标）
+- 🐛 修复导入 Profile 缺少结构校验（导入畸形数据可能导致异常）
+- 🔧 优化跳转填充机制（从硬编码 1.5s 改为监听页面加载完成 + 超时降级）
+- ✨ 新增加 GitHub Issues 反馈入口（关于弹窗中可一键跳转）
