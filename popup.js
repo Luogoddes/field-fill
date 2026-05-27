@@ -294,50 +294,15 @@ function renderPresets() {
         showToast('跳转配置不完整', 'error');
         return;
       }
-      
       try {
+        const fieldMap = {};
+        (profile.fields || []).forEach(f => { fieldMap[f.id] = { selector: f.selector, type: f.type }; });
         const newTab = await chrome.tabs.create({ url: preset.autoFill.jumpFill.url });
-        if (!newTab?.id) { showToast('⚠️ 无法创建标签页', 'error'); return; }
-        
-        const MAX_WAIT = 20000;
-        let fillDone = false;
-
-        const doJumpFill = async () => {
-          if (fillDone || !newTab.id) return;
-          fillDone = true;
-          try {
-            await chrome.scripting.executeScript({ target: { tabId: newTab.id }, files: ['content.js'] }).catch(() => {});
-            const fieldMap = {};
-            (profile.fields || []).forEach(f => { fieldMap[f.id] = { selector: f.selector, type: f.type }; });
-            const resp = await chrome.tabs.sendMessage(newTab.id, { action: 'fillDirect', config: preset.data, fieldMap });
-            if (resp?.result?.success > 0) {
-              showToast(`✅ 跳转并填充成功 ${resp.result.success} 个字段`, 'success');
-            } else {
-              showToast('⚠️ 跳转成功，但填充失败', 'warning');
-            }
-          } catch (e) {
-            showToast('⚠️ 填充失败：' + e.message, 'warning');
-          }
-        };
-
-        // 监听页面加载完成
-        const listener = (tabId, changeInfo) => {
-          if (tabId === newTab.id && changeInfo.status === 'complete') {
-            chrome.tabs.onUpdated.removeListener(listener);
-            setTimeout(doJumpFill, 600);
-          }
-        };
-        chrome.tabs.onUpdated.addListener(listener);
-
-        // 超时降级（20 秒后仍执行）
-        setTimeout(() => {
-          chrome.tabs.onUpdated.removeListener(listener);
-          doJumpFill();
-        }, MAX_WAIT);
-        
-        showToast(`🔗 正在跳转到目标页面...`, 'info');
+        if (!newTab?.id) { showToast('无法创建标签页', 'error'); return; }
+        chrome.runtime.sendMessage({ action: 'jumpFill', tabId: newTab.id, config: preset.data, fieldMap });
+        showToast('正在跳转并填充「' + preset.name + '」...', 'info');
       } catch (err) {
-        showToast('⚠️ 跳转失败：' + err.message, 'error');
+        showToast('跳转失败：' + err.message, 'error');
       }
     });
   });

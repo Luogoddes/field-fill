@@ -181,4 +181,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.storage.local.set({ theme: msg.theme }, () => sendResponse({ ok: true }));
     return true;
   }
+
+  if (msg.action === 'jumpFill') {
+    (async () => {
+      try {
+        const tabId = msg.tabId;
+        if (!tabId) return;
+        const MAX = 20000; let done = false;
+        const fill = async () => {
+          if (done) return; done = true;
+          await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] }).catch(() => {});
+          await chrome.tabs.sendMessage(tabId, { action: 'fillDirect', config: msg.config, fieldMap: msg.fieldMap }).catch(() => {});
+        };
+        const l = (tid, ci) => { if (tid === tabId && ci.status === 'complete') { chrome.tabs.onUpdated.removeListener(l); setTimeout(fill, 600); } };
+        chrome.tabs.onUpdated.addListener(l);
+        setTimeout(() => { chrome.tabs.onUpdated.removeListener(l); fill(); }, MAX);
+      } catch (_) {}
+    })();
+    sendResponse({ ok: true });
+    return true;
+  }
 });

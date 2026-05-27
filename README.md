@@ -121,6 +121,10 @@ MIT License
 
 ## Changelog
 
+### v1.4.4 (2026-05-20)
+- 🐛 修复跳转填充 bug：多预设同 URL 点击第二个跳转却填充第一个（popup 关闭导致回调丢失）
+- 🔧 改为混合模式：popup 开 tab + background 等加载后 fillDirect
+
 ### v1.4.3 (2026-05-13)
 - 🐛 修复 Bug A：SPA 路由跳转后自动填充失效（添加 history.pushState/replaceState 拦截 + popstate 监听）
 - 🐛 修复 Bug B：首次打开/刷新时自动填充行为不一致（添加 MutationObserver 重试机制，最多重试 10 次）
