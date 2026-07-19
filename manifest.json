@@ -2,9 +2,9 @@
   "manifest_version": 3,
   "name": "字段填充",
   "short_name": "字段填充",
-  "version": "1.4.4",
-  "version_name": "1.4.4",
-  "description": "Universal Field Filler — 一键填充任意网站表单字段，支持多 Profile、智能提取、预设管理、自动更新",
+  "version": "1.4.5",
+  "version_name": "1.4.5",
+  "description": "Universal Field Filler v2 — 多Profile预设填充、自动化、悬浮球快填、智能解析、自动填充",
   "github_url": "https://github.com/Luogoddes/field-fill/archive/refs/heads/main.zip",
   "permissions": [
     "storage",

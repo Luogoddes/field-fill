@@ -1,8 +1,8 @@
 /**
- * popup.js — 字段填充 · Universal Field Filler v4.3
+ * popup.js — 字段填充 · Universal Field Filler v1.4.5
  * 洛 - 愿执一生笔，画汝眉上柳...
  *
- * ★ v4.3 修复：
+ * ★ v1.4.5 修复：
  *   1. 预设填充显示所有 Profile 的预设（不再只显示 activeProfile）
  *   2. 详情「复制」→「文本预览」按钮，展示 "字段名：值" 格式文本
  *   3. 拾取器：popup 保持打开，通过 storage 轮询实时更新选择器输入框
@@ -25,6 +25,7 @@ let ctxChipId       = null;
 let pickerActive    = false;
 let pickerTabId     = null;
 let pickerChangeListener = null; // storage 变化监听器
+let pickerTarget    = null;      // { inputEl, onPick? } 通用拾取目标
 
 // ════════════════════════════════════════════
 //  Helpers
@@ -43,6 +44,79 @@ function getActiveProfile() {
   return profiles.find(p => p.id === activeProfileId)
       || profiles.find(p => p.isActive)
       || profiles[0];
+}
+
+// ════════════════════════════════════════════
+//  Shared Fields Helpers
+// ════════════════════════════════════════════
+function resolveSharedValue(val, sharedValues) {
+  if (typeof val !== 'string' || !val.includes('{{shared:')) return val;
+  return val.replace(/\{\{shared:([^}]+)\}\}/g, (_, fid) => {
+    if (!sharedValues) return '';
+    return sharedValues[fid] !== undefined ? sharedValues[fid] : '';
+  });
+}
+
+function getSharedRef(val) {
+  if (typeof val !== 'string') return null;
+  const m = val.match(/^\{\{shared:([^}]+)\}\}$/);
+  return m ? m[1] : null;
+}
+
+function buildSharedRef(fieldId) {
+  return `{{shared:${fieldId}}}`;
+}
+
+function resolvePresetData(preset, profile) {
+  const data = { ...(preset?.data || {}) };
+  const resolved = {};
+  for (const [fid, val] of Object.entries(data)) {
+    resolved[fid] = resolveSharedValue(val, profile?.sharedValues);
+  }
+  return resolved;
+}
+
+// 确保目标页面 content.js 已注入，避免首次 sendMessage 连接失败
+async function ensureContentScript(tabId) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+  } catch (_) {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+    await new Promise(r => setTimeout(r, 80));
+  }
+}
+
+// 将旧 sharedFields 数组迁移为新的 sharedValues 对象（每个 profile 一次）
+function migrateSharedFields() {
+  let changed = false;
+  profiles.forEach(profile => {
+    const arr = profile.sharedFields;
+    if (Array.isArray(arr) && arr.length) {
+      const obj = profile.sharedValues || {};
+      arr.forEach(sf => {
+        if (sf && sf.id && sf.value !== undefined && obj[sf.id] === undefined) {
+          obj[sf.id] = sf.value;
+        }
+      });
+      profile.sharedValues = obj;
+      delete profile.sharedFields;
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+// 为 runFlow 消息预解析 fill 步骤中的预设数据（含共享字段）
+function enrichFlowSteps(steps) {
+  return (steps || []).map(step => {
+    if (step.type !== 'fill' || !step.presetId) return step;
+    const profile = profiles.find(p => p.id === step.profileId) || profiles.find(p => p.isActive) || profiles[0];
+    const preset = profile?.presets.find(p => p.id === step.presetId);
+    if (!profile || !preset) return step;
+    const fieldMap = {};
+    (profile.fields || []).forEach(f => { fieldMap[f.id] = { selector: f.selector, type: f.type }; });
+    return { ...step, config: resolvePresetData(preset, profile), fieldMap };
+  });
 }
 
 // ════════════════════════════════════════════
@@ -91,8 +165,14 @@ async function checkAndCleanStorage() {
 }
 
 // 带容量检查的保存函数
+// 节流：最多每60s做一次存储清理检查（Bug C修复）
+let _lastCleanCheck = 0;
 async function saveProfiles() {
-  await checkAndCleanStorage();
+  const now = Date.now();
+  if (now - _lastCleanCheck > 60_000) {
+    _lastCleanCheck = now;
+    await checkAndCleanStorage();
+  }
   return new Promise((resolve, reject) => {
     chrome.storage.local.set({ profiles }, () => {
       if (chrome.runtime.lastError) {
@@ -130,12 +210,17 @@ function applyTheme(theme) {
 //  Dialog
 // ════════════════════════════════════════════
 let _dlgOk = null;
-function openDialog({ title, hint = '', placeholder = '', defaultValue = '' }) {
+let _dlgMultiline = false;
+function openDialog({ title, hint = '', placeholder = '', defaultValue = '', multiline = false }) {
   return new Promise(resolve => {
     _dlgOk = resolve;
+    _dlgMultiline = multiline;
     document.getElementById('dlg-title').textContent = title;
     document.getElementById('dlg-hint').textContent  = hint;
+    const box = document.getElementById('dlg-box');
     const inp = document.getElementById('dlg-inp');
+    box.classList.toggle('dlg-wide', multiline);
+    inp.classList.toggle('multiline', multiline);
     inp.placeholder = placeholder; inp.value = defaultValue;
     document.getElementById('dlg-ov').classList.add('show');
     setTimeout(() => { inp.focus(); inp.select(); }, 40);
@@ -143,6 +228,9 @@ function openDialog({ title, hint = '', placeholder = '', defaultValue = '' }) {
 }
 function closeDialog(val) {
   document.getElementById('dlg-ov').classList.remove('show');
+  const inp = document.getElementById('dlg-inp');
+  inp.classList.remove('multiline');
+  document.getElementById('dlg-box').classList.remove('dlg-wide');
   if (_dlgOk) { _dlgOk(val); _dlgOk = null; }
 }
 
@@ -155,6 +243,7 @@ function switchPanel(id) {
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === `panel-${id}`));
   if (id === 'presets') renderPresets();
   if (id === 'fields')  { renderProfileChips(); renderFields(); }
+  if (id === 'flows')   renderFlows();
 }
 
 // ════════════════════════════════════════════
@@ -168,9 +257,14 @@ async function fillWithData(profile, data) {
   if (!tab?.id) { showToast('无法获取当前页面', 'error'); return; }
   const fieldMap = {};
   (profile.fields || []).forEach(f => { fieldMap[f.id] = { selector: f.selector, type: f.type }; });
+  // Resolve shared field references before sending to content script
+  const config = {};
+  for (const [fid, val] of Object.entries(data)) {
+    config[fid] = resolveSharedValue(val, profile?.sharedValues);
+  }
   try {
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }).catch(() => {});
-    const resp = await chrome.tabs.sendMessage(tab.id, { action: 'fillDirect', config: data, fieldMap });
+    const resp = await chrome.tabs.sendMessage(tab.id, { action: 'fillDirect', config, fieldMap });
     if (resp?.result?.success > 0)
       showToast(`✅ 填充成功 ${resp.result.success} 个字段`, 'success');
     else if (resp?.result?.success === 0)
@@ -299,7 +393,7 @@ function renderPresets() {
         (profile.fields || []).forEach(f => { fieldMap[f.id] = { selector: f.selector, type: f.type }; });
         const newTab = await chrome.tabs.create({ url: preset.autoFill.jumpFill.url });
         if (!newTab?.id) { showToast('无法创建标签页', 'error'); return; }
-        chrome.runtime.sendMessage({ action: 'jumpFill', tabId: newTab.id, config: preset.data, fieldMap });
+        chrome.runtime.sendMessage({ action: 'jumpFill', tabId: newTab.id, config: resolvePresetData(preset, profile), fieldMap });
         showToast('正在跳转并填充「' + preset.name + '」...', 'info');
       } catch (err) {
         showToast('跳转失败：' + err.message, 'error');
@@ -548,9 +642,27 @@ function _parseTextToData(text, profile) {
 // Sync text content back into edit inputs
 function _parseTextIntoInputs(text, panel, profile) {
   const data = _parseTextToData(text, profile);
+  const sharedValues = profile.sharedValues || {};
   (profile.fields || []).forEach(f => {
     const inp = panel.querySelector(`.dfi[data-fid="${f.id}"]`);
-    if (inp && data[f.id] !== undefined) inp.value = data[f.id];
+    const cb  = panel.querySelector(`.sf-use-shared[data-fid="${f.id}"]`);
+    if (inp && data[f.id] !== undefined) {
+      const isSharedRef = getSharedRef(data[f.id]);
+      if (cb) {
+        cb.checked = !!isSharedRef;
+        if (isSharedRef) {
+          inp.classList.add('dfi-shared');
+          inp.setAttribute('readonly', '');
+          inp.closest('.dfield')?.classList.add('dfield-shared');
+        } else {
+          inp.classList.remove('dfi-shared');
+          inp.removeAttribute('readonly');
+          inp.closest('.dfield')?.classList.remove('dfield-shared');
+        }
+      }
+      // Resolve shared refs so the edit input shows the actual value
+      inp.value = resolveSharedValue(data[f.id], sharedValues);
+    }
   });
 }
 
@@ -658,7 +770,8 @@ async function deleteProfile(id) {
 }
 
 // ════════════════════════════════════════════
-//  Fields Panel
+// ════════════════════════════════════════════
+//  Fields Panel (shared values live inside each field row)
 // ════════════════════════════════════════════
 function renderFields() {
   const profile = getActiveProfile();
@@ -678,7 +791,10 @@ function renderFields() {
     return;
   }
 
-  list.innerHTML = fields.map((f, i) => `
+  const sharedValues = profile.sharedValues || {};
+  list.innerHTML = fields.map((f, i) => {
+    const sv = sharedValues[f.id] || '';
+    return `
     <div class="fitem" draggable="true" data-idx="${i}" data-fid="${f.id}">
       <input type="checkbox" class="batch-cb" data-fid="${f.id}">
       <span class="drag-h" title="拖拽排序">⠿</span>
@@ -687,12 +803,13 @@ function renderFields() {
         <input class="fname-e" value="${esc(f.name)}" data-fid="${f.id}" title="点击修改字段名">
         <div class="fsel" title="${esc(f.selector)}">${esc(f.selector)}</div>
       </div>
+      <input class="fshared" value="${esc(sv)}" data-fid="${f.id}" data-has-value="${sv ? 'true' : 'false'}" title="统一值（空表示不共享）" placeholder="统一值">
       <label class="fw-toggle" title="独占一行">
         <input type="checkbox" data-fid="${f.id}" ${f.fullWidth ? 'checked' : ''}> 独行
       </label>
       <button class="bico d" data-fid="${f.id}" title="删除">✕</button>
     </div>
-  `).join('');
+  `}).join('');
 
   if (batchMode) list.querySelectorAll('.fitem').forEach(el => el.classList.add('batch-mode'));
 
@@ -716,10 +833,25 @@ function renderFields() {
   // Delete single
   list.querySelectorAll('.bico.d').forEach(btn => {
     btn.addEventListener('click', async () => {
-      profile.fields = profile.fields.filter(f => f.id !== btn.dataset.fid);
+      const fid = btn.dataset.fid;
+      profile.fields = profile.fields.filter(f => f.id !== fid);
+      if (profile.sharedValues) delete profile.sharedValues[fid];
       await saveProfiles(); renderFields();
       showToast('🗑️ 字段已删除', 'info');
     });
+  });
+
+  // Shared value (unified value) inline edit
+  list.querySelectorAll('.fshared').forEach(inp => {
+    inp.addEventListener('change', async () => {
+      const fid = inp.dataset.fid;
+      if (!profile.sharedValues) profile.sharedValues = {};
+      profile.sharedValues[fid] = inp.value;
+      inp.dataset.hasValue = inp.value ? 'true' : 'false';
+      await saveProfiles();
+      showToast('✅ 统一值已更新，引用预设将同步', 'success', 1400);
+    });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
   });
 
   // Batch checkboxes
@@ -764,12 +896,48 @@ function toggleBatchMode() {
   renderFields();
 }
 
+async function editSharedValuesAsText() {
+  const profile = getActiveProfile();
+  if (!profile) { showToast('请先选择 Profile', 'warning'); return; }
+  const fields = profile.fields || [];
+  if (!fields.length) { showToast('当前 Profile 没有字段', 'warning'); return; }
+  const sharedValues = profile.sharedValues || {};
+  const defaultText = fields.map(f => `${f.name}：${sharedValues[f.id] || ''}`).join('\n');
+  const text = await openDialog({
+    title: '批量编辑统一值',
+    hint: '每行格式：字段名：值。空值表示不共享。支持 Ctrl+Enter 保存。',
+    placeholder: 'SoC 版本：v1.0\nMCU 版本：v2.0',
+    defaultValue: defaultText,
+    multiline: true
+  });
+  if (text === null) return; // cancelled
+  if (!profile.sharedValues) profile.sharedValues = {};
+  const nameMap = new Map(fields.map(f => [f.name.trim(), f.id]));
+  let updated = 0;
+  text.split('\n').forEach(line => {
+    const idx = line.indexOf('：');
+    if (idx === -1) return;
+    const name = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1).trim();
+    const fid = nameMap.get(name);
+    if (!fid) return;
+    if (value) { profile.sharedValues[fid] = value; updated++; }
+    else { delete profile.sharedValues[fid]; updated++; }
+  });
+  await saveProfiles();
+  renderFields();
+  showToast(`✅ 已更新 ${updated} 个统一值`, 'success', 1400);
+}
+
 async function deleteSelectedFields() {
   const profile = getActiveProfile(); if (!profile) return;
   const selected = [...document.querySelectorAll('.batch-cb:checked')].map(cb => cb.dataset.fid);
   if (!selected.length) { showToast('请先选择字段', 'warning'); return; }
   if (!confirm(`确定删除选中的 ${selected.length} 个字段？`)) return;
   profile.fields = profile.fields.filter(f => !selected.includes(f.id));
+  if (profile.sharedValues) {
+    selected.forEach(fid => delete profile.sharedValues[fid]);
+  }
   await saveProfiles();
   document.getElementById('selall-fields').checked = false;
   document.getElementById('sel-count').textContent = '';
@@ -785,6 +953,7 @@ async function addFieldManually() {
   const type = document.getElementById('new-ftype').value;
   if (!name) { showToast('请输入字段名称', 'error'); return; }
   if (!sel)  { showToast('请输入 CSS 选择器', 'error'); return; }
+  if (!Array.isArray(profile.fields)) profile.fields = [];
   if (profile.fields.find(f => f.selector === sel)) { showToast('该选择器已存在', 'error'); return; }
   profile.fields.push({ id:'field-'+uid(), name, selector:sel, type, fullWidth:0 });
   await saveProfiles();
@@ -797,15 +966,28 @@ async function addFieldManually() {
 
 // ════════════════════════════════════════════
 //  Live Hover Picker
-//  Popup stays open. content.js sends pickerHover to background
-//  background stores in __pickerHover. We use storage.onChanged for better performance.
+//  字段配置 / 自动化流程拾取均关闭 popup，避免插件窗口遮挡页面目标元素。
+//  content.js 将结果存入 __pickerHover，popup 重新打开后读取并回填。
 // ════════════════════════════════════════════
-async function startPicker() {
-  if (pickerActive) { stopPicker(); return; }
+async function startPicker(target = null) {
+  // target 结构：
+  //   null                -> 字段配置拾取
+  //   { mode:'flow', flowId, stepIndex, inputEl } -> 自动化流程步骤拾取
+  // 两种模式都关闭 popup，避免插件窗口遮挡页面目标元素；结果通过 storage 恢复
+  if (pickerActive) {
+    if (pickerTarget === target) { stopPicker(); return; }
+    stopPicker();
+  }
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) { showToast('无法获取页面', 'error'); return; }
   pickerTabId = tab.id;
+  pickerTarget = target;
+
+  // 强制停止页面可能仍在运行的旧拾取器，避免 content.js 因 _pickerActive=true 而拒绝启动
+  try {
+    await chrome.tabs.sendMessage(tab.id, { action: 'stopPicker' }).catch(() => {});
+  } catch (_) {}
 
   // Ensure content script loaded
   try {
@@ -816,36 +998,19 @@ async function startPicker() {
   }
 
   pickerActive = true;
-  const selEl  = document.getElementById('new-fsel');
-  const hint   = document.getElementById('picker-hint');
-  const pickBtn = document.getElementById('pick-btn');
 
-  selEl.classList.add('picker-active');
-  selEl.placeholder = '拾取中，将鼠标悬停到目标字段…';
-  hint.classList.add('show');
-  pickBtn.textContent = '⏹ 停止';
-  pickBtn.classList.add('btn-err');
-  pickBtn.classList.remove('btn-g');
-
-  // Clear old hover data
-  await new Promise(r => chrome.storage.local.remove('__pickerHover', r));
-
-  // Use storage.onChanged instead of polling for better performance
-  pickerChangeListener = (changes, area) => {
-    if (area !== 'local' || !changes.__pickerHover) return;
-    const { newValue } = changes.__pickerHover;
-    if (!newValue) return;
-    const { selector, type, label } = newValue;
-    if (selector) {
-      selEl.value = selector;
-      selEl.style.borderColor = '#10b981';
-      if (type) document.getElementById('new-ftype').value = type;
-      // Always update name to match current hovered element
-      const nameEl = document.getElementById('new-fname');
-      if (label) nameEl.value = label;
-    }
-  };
-  chrome.storage.onChanged.addListener(pickerChangeListener);
+  // 统一：字段配置 / 自动化流程拾取都关闭 popup，重新打开后再回填结果
+  const mode = target?.mode === 'flow' ? 'flow-config' : 'field-config';
+  const storeData = { __pickerTargetMode: mode };
+  if (mode === 'flow-config') {
+    storeData.__pickerTargetFlowId = target.flowId;
+    storeData.__pickerTargetStepIndex = target.stepIndex;
+  }
+  // 启动新拾取前清理旧结果，避免上次残留数据被误判为本次确认结果
+  await chrome.storage.local.remove('__pickerHover');
+  await chrome.storage.local.set(storeData);
+  pickerActive = false; // 防止 beforeunload 触发 stopPicker
+  setTimeout(() => window.close(), 120);
 }
 
 function stopPicker() {
@@ -860,17 +1025,21 @@ function stopPicker() {
 
   chrome.storage.local.remove('__pickerHover');
 
-  const selEl  = document.getElementById('new-fsel');
-  const hint   = document.getElementById('picker-hint');
-  const pickBtn = document.getElementById('pick-btn');
+  // 只有字段面板拾取才需要恢复默认 UI
+  if (!pickerTarget) {
+    const selEl  = document.getElementById('new-fsel');
+    const hint   = document.getElementById('picker-hint');
+    const pickBtn = document.getElementById('pick-btn');
 
-  selEl.classList.remove('picker-active');
-  selEl.style.borderColor = '';
-  selEl.placeholder = 'CSS 选择器（如：#issue_subject）';
-  hint.classList.remove('show');
-  pickBtn.textContent = '🎯 拾取';
-  pickBtn.classList.remove('btn-err');
-  pickBtn.classList.add('btn-g');
+    selEl.classList.remove('picker-active');
+    selEl.style.borderColor = '';
+    selEl.placeholder = 'CSS 选择器（如：#issue_subject）';
+    hint.classList.remove('show');
+    pickBtn.textContent = '🎯 拾取';
+    pickBtn.classList.remove('btn-err');
+    pickBtn.classList.add('btn-g');
+  }
+  pickerTarget = null;
 
   // Tell content script to stop
   if (pickerTabId) {
@@ -913,6 +1082,7 @@ function _extractScript() {
     let type='text';
     if(el.tagName==='SELECT') type='select';
     else if(el.tagName==='TEXTAREA') type='textarea';
+    else if(el.tagName==='INPUT' && (el.type==='time' || el.type==='date')) type=el.type;
     results.push({label:lbl.slice(0,60),selector:sel,type});
   });
   return results.slice(0,80);
@@ -1055,10 +1225,10 @@ function downloadJSON(data, filename) {
   const a = Object.assign(document.createElement('a'), {href:url, download:filename});
   document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 }
-const exportAll = () => { downloadJSON({_type:'uff-backup',version:'4.3',profiles,exportedAt:Date.now()}, 'uff-backup.json'); showToast('📤 备份已导出','success'); };
+const exportAll = () => { downloadJSON({_type:'uff-backup',version:'1.4.5',profiles,exportedAt:Date.now()}, 'uff-backup.json'); showToast('📤 备份已导出','success'); };
 const exportProfile = () => {
   const p=getActiveProfile(); if(!p){showToast('请先选择 Profile','error');return;}
-  downloadJSON({_type:'uff-profile',version:'4.3',profile:p},`profile-${p.name}.json`); showToast('📋 已导出','success');
+  downloadJSON({_type:'uff-profile',version:'1.4.5',profile:p},`profile-${p.name}.json`); showToast('📋 已导出','success');
 };
 async function importFile() {
   return new Promise(resolve=>{
@@ -1106,6 +1276,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     profiles = [{ id:'profile-default', name:'Default', isActive:true, tags:[], fields:[], presets:[] }];
     await saveProfiles();
   }
+  if (migrateSharedFields()) await saveProfiles();
   activeProfileId = profiles.find(p=>p.isActive)?.id || profiles[0].id;
 
   // Theme
@@ -1132,8 +1303,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('dlg-cancel').addEventListener('click', () => closeDialog(null));
   document.getElementById('dlg-confirm').addEventListener('click', () => closeDialog(document.getElementById('dlg-inp').value));
   document.getElementById('dlg-inp').addEventListener('keydown', e=>{
-    if(e.key==='Enter') closeDialog(document.getElementById('dlg-inp').value);
-    if(e.key==='Escape') closeDialog(null);
+    if(e.key==='Escape') { closeDialog(null); return; }
+    if(e.key==='Enter' && !_dlgMultiline) { closeDialog(document.getElementById('dlg-inp').value); return; }
+    if(e.key==='Enter' && (e.ctrlKey || e.metaKey)) {
+      closeDialog(document.getElementById('dlg-inp').value);
+    }
   });
   document.getElementById('dlg-ov').addEventListener('click', e=>{ if(e.target===e.currentTarget) closeDialog(null); });
 
@@ -1150,12 +1324,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Fields
   document.getElementById('new-profile-btn').addEventListener('click', createProfile);
   document.getElementById('scan-btn').addEventListener('click', scanPage);
-  document.getElementById('pick-btn').addEventListener('click', startPicker);
+  document.getElementById('pick-btn').addEventListener('click', () => startPicker());
   document.getElementById('stop-pick-link').addEventListener('click', e=>{ e.preventDefault(); stopPicker(); });
   document.getElementById('er-selall').addEventListener('click', ()=>{});  // bound in renderExtractResult
   document.getElementById('er-add').addEventListener('click', addExtractedFields);
   document.getElementById('add-field-btn').addEventListener('click', addFieldManually);
   document.getElementById('batch-toggle-btn').addEventListener('click', toggleBatchMode);
+  document.getElementById('shared-text-btn').addEventListener('click', editSharedValuesAsText);
   document.getElementById('del-selected-btn').addEventListener('click', deleteSelectedFields);
   document.getElementById('selall-fields').addEventListener('change', function() {
     document.querySelectorAll('.batch-cb').forEach(cb=>{ cb.checked=this.checked; });
@@ -1167,11 +1342,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('parse-btn').addEventListener('click', onParse);
   document.getElementById('parse-input').addEventListener('keydown', e=>{ if(e.ctrlKey&&e.key==='Enter') onParse(); });
   document.getElementById('save-parse-btn').addEventListener('click', saveParseAsPreset);
-  // Height persistence
-  const ta = document.getElementById('parse-input');
-  const savedH = localStorage.getItem('uff-parse-h');
-  if (savedH) ta.style.height = savedH;
-  new ResizeObserver(() => { localStorage.setItem('uff-parse-h', ta.offsetHeight + 'px'); }).observe(ta);
+  // 不使用localStorage（Bug D修复：MV3中不稳定）
+
+  // Launcher toggle
+  (async () => {
+    const { launcherEnabled = true } = await chrome.storage.local.get('launcherEnabled');
+    const lt = document.getElementById('launcher-toggle');
+    if (lt) {
+      lt.checked = launcherEnabled;
+      lt.addEventListener('change', async () => {
+        await chrome.storage.local.set({ launcherEnabled: lt.checked });
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+          chrome.tabs.sendMessage(tab.id, { action: lt.checked ? 'launcherShow' : 'launcherHide' }).catch(() => {});
+        }
+        showToast(lt.checked ? '✅ 悬浮球已启用' : '✅ 悬浮球已隐藏', 'success');
+      });
+    }
+  })();
 
   // IO
   document.getElementById('export-all-btn').addEventListener('click', exportAll);
@@ -1244,6 +1432,77 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderPresets();
   renderProfileChips();
   renderFields();
+
+  // Flows
+  await loadFlows();
+  document.getElementById('add-flow-btn')?.addEventListener('click', async () => {
+    const name = await openDialog({ title:'新建自动化', placeholder:'如：提交Bug流程', hint:'配置点击序列和填充步骤' });
+    if (!name?.trim()) return;
+    flows.push({ id: 'flow-' + uid(), name: name.trim(), steps: [] });
+    await saveFlows();
+    renderFlows();
+    showToast('✅ 流程已创建', 'success');
+  });
+
+  // 恢复拾取结果（popup 关闭后重新打开，必须在 loadFlows 之后）
+  const pickerStored = await chrome.storage.local.get([
+    '__pickerTargetMode', '__pickerHover', '__pickerTargetFlowId', '__pickerTargetStepIndex'
+  ]);
+  const pickerMode = pickerStored.__pickerTargetMode;
+  const hover = pickerStored.__pickerHover;
+  const pickerFlowId = pickerStored.__pickerTargetFlowId;
+  const pickerStepIndex = pickerStored.__pickerTargetStepIndex;
+
+  if (hover?.clicked && hover?.selector != null) {
+    if (pickerMode === 'field-config') {
+      switchPanel('fields');
+      const fsel = document.getElementById('new-fsel');
+      const fname = document.getElementById('new-fname');
+      const ftype = document.getElementById('new-ftype');
+      if (fsel) fsel.value = hover.selector;
+      if (fname) fname.value = hover.label || '';
+      if (ftype && hover.type && ['text','select','textarea','date','time'].includes(hover.type)) {
+        ftype.value = hover.type;
+      }
+      showToast('✅ 已填入拾取结果', 'success', 1400);
+    } else if (pickerMode === 'flow-config' && pickerFlowId != null && pickerStepIndex != null) {
+      switchPanel('flows');
+      // 轮询等待 DOM 渲染完成后再回填，避免 setTimeout 时长不准确
+      const fillSelector = () => {
+        const list = document.getElementById('flow-list');
+        const toggleBtn = list?.querySelector(`.flow-toggle[data-fid="${pickerFlowId}"]`);
+        if (!toggleBtn) return false;
+        const panel = document.getElementById(`fd-${pickerFlowId}`);
+        if (panel && !panel.classList.contains('open')) toggleBtn.click();
+
+        const input = document.querySelector(`.step-item[data-si="${pickerStepIndex}"] .step-sel`);
+        if (!input) return false;
+
+        input.value = hover.selector;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        // 同步更新内存中的 flow.steps，避免切换面板/重新展开时丢失
+        const flow = flows.find(f => f.id === pickerFlowId);
+        if (flow && flow.steps[pickerStepIndex]) {
+          flow.steps[pickerStepIndex].selector = hover.selector;
+        }
+        showToast('✅ 已填入拾取结果', 'success', 1400);
+        return true;
+      };
+      let attempts = 0;
+      const timer = setInterval(() => {
+        attempts++;
+        if (fillSelector() || attempts > 30) clearInterval(timer);
+      }, 60);
+    }
+  }
+
+  // 清理拾取状态（确认结果已消费或无需恢复）
+  if (pickerMode || hover) {
+    await chrome.storage.local.remove([
+      '__pickerTargetMode', '__pickerHover',
+      '__pickerTargetFlowId', '__pickerTargetStepIndex'
+    ]);
+  }
 });
 
 function hideCtx() { document.getElementById('ctx-menu').classList.remove('show'); }
@@ -1475,18 +1734,57 @@ function bindAutoFillEvents(panel, preset) {
 // ── buildDetailHTML (final override) ─────────────
 window.buildDetailHTML = function(preset, profile) {
   const fields = profile.fields || [];
+  const sharedValues = profile.sharedValues || {};
 
   // grid: respect fullWidth and textarea
   const gridHTML = fields.map(f => {
-    const val    = preset.data?.[f.id] ?? '';
-    const isFull = f.fullWidth===1 || f.type==='textarea' || String(val).includes('\n') || String(val).length > 60;
-    const inp    = isFull
-      ? `<textarea class="dfi dfi-inp" data-fid="${f.id}" rows="2">${esc(val)}</textarea>`
-      : `<input class="dfi dfi-inp" type="text" data-fid="${f.id}" value="${esc(val)}">`;
-    return `<div class="dfield ${isFull?'full':''}"><div class="dlbl">${esc(f.name)}</div>${inp}</div>`;
+    const rawVal   = preset.data?.[f.id] ?? '';
+    const sharedId = getSharedRef(rawVal);
+    const isShared = !!sharedId;
+    const val      = isShared ? (sharedValues[f.id] ?? '') : rawVal;
+    const origVal  = isShared ? (preset.__origValues?.[f.id] ?? '') : rawVal;
+    const isFull   = f.fullWidth===1 || f.type==='textarea' || String(rawVal).includes('\n') || String(rawVal).length > 60;
+    const isDate   = f.type === 'date';
+    const isTime   = f.type === 'time';
+
+    const sharedToggle = `
+      <label class="sf-toggle" title="使用已配置字段中设置的统一值">
+        <input type="checkbox" class="sf-use-shared" data-fid="${f.id}" ${isShared ? 'checked' : ''}>
+        使用共享
+      </label>`;
+
+    let dynCtrl = '';
+    if (!isFull && !isShared) {
+      if (isDate) {
+        dynCtrl = `<select class="dv-sel inp" data-fid="${f.id}" style="width:auto;font-size:12px;">
+          <option value="">选择日期</option>
+          <option value="{{date}}">今天</option>
+          <option value="{{date+1}}">明天</option>
+          <option value="{{date+2}}">后天</option>
+          <option value="{{date+7}}">7天后</option>
+          <option value="{{date+21}}">21天后</option>
+        </select>`;
+      } else if (isTime) {
+        dynCtrl = `<button class="btn btn-g btn-sm dv-btn" data-fid="${f.id}" data-template="{{time}}">当前时间</button>`;
+      }
+    }
+
+    const labelRow = `
+      <div class="dlbl-row">
+        <span class="dlbl">${esc(f.name)}</span>
+        <div class="dlbl-r">${sharedToggle}</div>
+      </div>`;
+
+    const inp = isFull
+      ? `<textarea class="dfi dfi-inp ${isShared?'dfi-shared':''}" data-fid="${f.id}" data-orig="${esc(origVal)}" rows="2" ${isShared?'readonly':''}>${esc(val)}</textarea>`
+      : `<div style="display:flex;gap:5px;align-items:center;">
+          <input class="dfi dfi-inp ${isShared?'dfi-shared':''}" type="text" data-fid="${f.id}" data-orig="${esc(origVal)}" value="${esc(val)}" style="flex:1;" ${isShared?'readonly':''}>
+          ${dynCtrl}
+         </div>`;
+    return `<div class="dfield ${isFull?'full':''} ${isShared?'dfield-shared':''}">${labelRow}${inp}</div>`;
   }).join('');
 
-  // text view: name：value per field, multiline values preserved
+  // text view: name：value per field, multiline values preserved (raw refs shown)
   const previewText = fields.map(f => {
     const val = preset.data?.[f.id] ?? '';
     return `${f.name}：${val}`;
@@ -1570,8 +1868,62 @@ window.bindDetailEvents = function(panel, preset, profile) {
   panel.querySelectorAll('.dfi').forEach(inp => {
     inp.addEventListener('input', () => panel.querySelector('[data-act="save"]')?.classList.add('has-changes'));
   });
+
+  // 日期/时间字段：快捷插入 {{date}} / {{time}}
+  panel.querySelectorAll('.dv-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const fid = btn.dataset.fid;
+      const template = btn.dataset.template;
+      const inp = panel.querySelector(`.dfi[data-fid="${fid}"]`);
+      if (!inp || !template) return;
+      inp.value = template;
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      panel.querySelector('[data-act="save"]')?.classList.add('has-changes');
+    });
+  });
+
+  // 日期字段下拉：今天 / 明天 / 后天 / N天后
+  panel.querySelectorAll('.dv-sel').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const fid = sel.dataset.fid;
+      const template = sel.value;
+      const inp = panel.querySelector(`.dfi[data-fid="${fid}"]`);
+      if (!inp || !template) return;
+      inp.value = template;
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      panel.querySelector('[data-act="save"]')?.classList.add('has-changes');
+      sel.value = '';
+    });
+  });
   panel.querySelector(`#ptxt-${preset.id}`)?.addEventListener('input', () => {
     panel.querySelector('[data-act="save"]')?.classList.add('has-changes');
+  });
+
+  // Shared field toggle
+  panel.querySelectorAll('.sf-use-shared').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const fid = cb.dataset.fid;
+      const dfield = cb.closest('.dfield');
+      const inp = dfield?.querySelector(`.dfi[data-fid="${fid}"]`);
+      const saveBtn = panel.querySelector('[data-act="save"]');
+      if (!inp) return;
+      const sharedValues = profile.sharedValues || {};
+      if (cb.checked) {
+        // Enable shared mode: remember the custom value being replaced
+        inp.dataset.orig = inp.value;
+        dfield?.classList.add('dfield-shared');
+        inp.classList.add('dfi-shared');
+        inp.setAttribute('readonly', '');
+        inp.value = sharedValues[fid] ?? '';
+      } else {
+        // Disable shared mode: restore the original custom value
+        dfield?.classList.remove('dfield-shared');
+        inp.classList.remove('dfi-shared');
+        inp.removeAttribute('readonly');
+        inp.value = inp.dataset.orig || '';
+      }
+      saveBtn?.classList.add('has-changes');
+    });
   });
 
   // Bind auto-fill tab
@@ -1592,8 +1944,16 @@ window.bindDetailEvents = function(panel, preset, profile) {
     const tags  = panel.querySelector(`#dt-${preset.id}`)?.value.split(',').map(t=>t.trim()).filter(Boolean);
     const data  = _collectDetailData(panel, profile);
     if (panel._collectAutoFill) preset.autoFill = panel._collectAutoFill();
+    // 保留切换共享字段前的原始自定义值，便于取消共享时恢复
+    const origMap = {};
+    panel.querySelectorAll('.dfi[data-orig][data-fid]').forEach(inp => {
+      origMap[inp.dataset.fid] = inp.dataset.orig || '';
+    });
     const p = profile.presets.find(x => x.id===preset.id);
-    if (p) { p.name=name||p.name; p.tags=tags; p.data=data; p.autoFill=preset.autoFill; }
+    if (p) {
+      p.name=name||p.name; p.tags=tags; p.data=data; p.autoFill=preset.autoFill;
+      p.__origValues = { ...(p.__origValues || {}), ...origMap };
+    }
     await saveProfiles();
     panel.querySelector('[data-act="save"]')?.classList.remove('has-changes');
     renderPresets();
@@ -1654,6 +2014,388 @@ function _collectDetailData(panel, profile) {
     if (ta) return _parseTextToData(ta.value, profile);
   }
   const data = {};
-  panel.querySelectorAll('.dfi[data-fid]').forEach(inp => { data[inp.dataset.fid] = inp.value; });
+  panel.querySelectorAll('.dfi[data-fid]').forEach(inp => {
+    const fid = inp.dataset.fid;
+    const cb = panel.querySelector(`.sf-use-shared[data-fid="${fid}"]`);
+    if (cb?.checked) {
+      data[fid] = buildSharedRef(fid);
+    } else {
+      data[fid] = inp.value;
+    }
+  });
   return data;
+}
+
+// ════════════════════════════════════════════
+//  自动化管理 (Flows)
+//  数据结构存储在 chrome.storage.local 的 flows 字段
+//  每条流程：{ id, name, steps: [{type, selector/presetId/profileId/ms, wait/delay}] }
+// ════════════════════════════════════════════
+let flows = [];
+
+async function loadFlows() {
+  const { flows: f } = await chrome.storage.local.get('flows');
+  flows = f || [];
+}
+
+async function saveFlows() {
+  await chrome.storage.local.set({ flows });
+}
+
+function renderFlows() {
+  const list  = document.getElementById('flow-list');
+  const empty = document.getElementById('flow-empty');
+  if (!list) return;
+
+  if (!flows.length) {
+    list.innerHTML = '';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  list.innerHTML = flows.map((flow, fi) => `
+    <div class="flow-card" data-fid="${flow.id}">
+      <div class="flow-card-hd" data-fid="${flow.id}">
+        <div class="flow-hd-l">
+          <div class="flow-ico">⚡</div>
+          <div>
+            <div class="flow-name">${esc(flow.name)}</div>
+            <div class="flow-desc">${flow.steps.length} 个步骤</div>
+          </div>
+        </div>
+        <div class="flow-acts">
+          <button class="btn btn-ok btn-sm flow-run" data-fid="${flow.id}">▶ 运行</button>
+          <button class="bico flow-toggle" data-fid="${flow.id}" title="展开编辑">▼</button>
+        </div>
+      </div>
+      <div class="flow-detail" id="fd-${flow.id}"></div>
+    </div>
+  `).join('');
+
+  // 运行
+  list.querySelectorAll('.flow-run').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const flow = flows.find(f => f.id === btn.dataset.fid);
+      if (!flow) return;
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab?.id) { showToast('无法获取当前页面', 'error'); return; }
+        await chrome.tabs.sendMessage(tab.id, { action: 'runFlow', steps: enrichFlowSteps(flow.steps) });
+        showToast(`⚡ 流程「${flow.name}」已启动`, 'success');
+      } catch (e) { showToast('运行失败：' + e.message, 'error'); }
+    });
+  });
+
+  // 点击卡片头部展开/收起（与右侧下拉箭头效果一致）
+  list.querySelectorAll('.flow-card-hd').forEach(hd => {
+    hd.addEventListener('click', e => {
+      if (e.target.closest('.flow-acts')) return;
+      const btn = hd.querySelector('.flow-toggle');
+      if (btn) btn.click();
+    });
+  });
+
+  // 展开编辑
+  list.querySelectorAll('.flow-toggle').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const fid   = btn.dataset.fid;
+      const panel = document.getElementById(`fd-${fid}`);
+      const open  = panel.classList.contains('open');
+      list.querySelectorAll('.flow-detail.open').forEach(p => { p.classList.remove('open'); p.innerHTML=''; });
+      list.querySelectorAll('.flow-toggle').forEach(b => b.textContent='▼');
+      if (!open) {
+        const flow = flows.find(f => f.id === fid);
+        if (flow) {
+          panel.innerHTML = buildFlowDetail(flow);
+          panel.classList.add('open');
+          btn.textContent = '▲';
+          bindFlowDetail(panel, flow);
+        }
+      }
+    });
+  });
+}
+
+function buildFlowDetail(flow) {
+  const stepsHTML = flow.steps.map((step, si) => buildStepHTML(step, si)).join('');
+  const profileOpts = profiles.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+
+  return `
+    <div style="padding:12px;">
+      <div class="flow-meta-row">
+        <input class="inp" id="fn-${flow.id}" value="${esc(flow.name)}" placeholder="流程名称" style="flex:1;">
+      </div>
+      <div class="step-list" id="sl-${flow.id}">${stepsHTML}</div>
+      <button class="add-step-btn" id="add-step-${flow.id}">＋ 添加步骤</button>
+      <div class="flow-acts-bar">
+        <button class="flow-run-btn" data-fid="${flow.id}">▶ 运行流程</button>
+        <button class="btn btn-p btn-sm" data-act="save-flow" data-fid="${flow.id}">💾 保存</button>
+        <button class="btn btn-err btn-sm" data-act="del-flow" data-fid="${flow.id}">🗑️ 删除</button>
+      </div>
+    </div>`;
+}
+
+function buildStepHTML(step, si) {
+  const typeOpts = [
+    { v:'click',   l:'🖱️ 点击元素' },
+    { v:'fill',    l:'✏️ 填充预设' },
+    { v:'wait',    l:'⏳ 等待延迟' },
+    { v:'waitFor', l:'👁️ 等待元素出现' },
+  ].map(o => `<option value="${o.v}"${step.type===o.v?' selected':''}>${o.l}</option>`).join('');
+
+  let cfg = '';
+  if (step.type === 'click') {
+    cfg = `
+      <div class="step-cfg">
+        <div style="display:flex;gap:5px;">
+          <input class="step-inp step-sel" style="flex:1;" placeholder="CSS 选择器（如：#submit-btn）" value="" data-si="${si}">
+          <button class="btn btn-g btn-sm step-pick" title="点击拾取目标元素">🎯</button>
+          <button class="btn btn-ok btn-sm step-test-click" title="在当前页面测试点击该元素">▶ 测试</button>
+        </div>
+        <div class="step-row">
+          <span class="step-lbl">点击后等待</span>
+          <input class="step-inp" type="number" style="width:70px;" placeholder="300" value="${step.wait||300}" data-key="wait">
+          <span class="step-lbl">ms</span>
+        </div>
+      </div>`;
+  } else if (step.type === 'fill') {
+    const profileSel = profiles.map(p => `<option value="${p.id}"${step.profileId===p.id?' selected':''}>${esc(p.name)}</option>`).join('');
+    const activeP = profiles.find(p => p.id === step.profileId) || profiles[0];
+    const presetSel = (activeP?.presets||[]).map(p => `<option value="${p.id}"${step.presetId===p.id?' selected':''}>${esc(p.name)}</option>`).join('');
+    cfg = `
+      <div class="step-cfg">
+        <select class="step-inp step-profile-sel" data-key="profileId">
+          ${profileSel}
+        </select>
+        <select class="step-inp step-preset-sel" data-key="presetId">
+          ${presetSel || '<option value="">（无预设）</option>'}
+        </select>
+        <div class="step-row">
+          <span class="step-lbl">填充后延迟</span>
+          <input class="step-inp" type="number" style="width:70px;" placeholder="200" value="${step.delay||200}" data-key="delay">
+          <span class="step-lbl">ms</span>
+        </div>
+      </div>`;
+  } else if (step.type === 'wait') {
+    cfg = `
+      <div class="step-cfg">
+        <div class="step-row">
+          <span class="step-lbl">等待时长</span>
+          <input class="step-inp" type="number" style="width:90px;" placeholder="500" value="${step.ms||500}" data-key="ms">
+          <span class="step-lbl">ms</span>
+        </div>
+      </div>`;
+  } else if (step.type === 'waitFor') {
+    cfg = `
+      <div class="step-cfg">
+        <div style="display:flex;gap:5px;">
+          <input class="step-inp step-sel" style="flex:1;" placeholder="CSS 选择器（如：.modal-confirm）" value="" data-si="${si}">
+          <button class="btn btn-g btn-sm step-pick" title="拾取目标元素">🎯</button>
+        </div>
+        <div class="step-row">
+          <span class="step-lbl">最长等待</span>
+          <input class="step-inp" type="number" style="width:90px;" placeholder="5000" value="${step.timeout||5000}" data-key="timeout">
+          <span class="step-lbl">ms</span>
+        </div>
+      </div>`;
+  }
+
+  return `
+    <div class="step-item" data-si="${si}">
+      <div class="step-num">${si+1}</div>
+      <div class="step-body">
+        <select class="step-type-sel" data-si="${si}">${typeOpts}</select>
+        ${cfg}
+      </div>
+      <button class="bico d step-del" data-si="${si}">✕</button>
+    </div>`;
+}
+
+function bindFlowDetail(panel, flow) {
+  const slId = `sl-${flow.id}`;
+
+  // 渲染后用 JS 回填选择器，避免含引号/反斜杠的选择器在 HTML value 属性中被截断
+  function refillSelectors() {
+    panel.querySelectorAll('.step-sel').forEach(inp => {
+      const si = parseInt(inp.dataset.si);
+      if (!isNaN(si) && flow.steps[si]) {
+        inp.value = flow.steps[si].selector || '';
+      }
+    });
+  }
+  refillSelectors();
+
+  // step type change → re-render that step
+  function rebindSteps() {
+    panel.querySelectorAll('.step-type-sel').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const si = parseInt(sel.dataset.si);
+        // ★ 先收集当前 DOM 中所有步骤，避免重新渲染时丢失其他步骤已拾取的内容
+        flow.steps = collectSteps();
+        flow.steps[si] = { ...(flow.steps[si] || {}), type: sel.value };
+        const list = document.getElementById(slId);
+        if (list) {
+          list.innerHTML = flow.steps.map((s,i) => buildStepHTML(s,i)).join('');
+          refillSelectors();
+          rebindSteps();
+        }
+      });
+    });
+
+    // profile change → reload presets
+    panel.querySelectorAll('.step-profile-sel').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const item = sel.closest('.step-item');
+        const si = item ? parseInt(item.dataset.si) : -1;
+        if (si > -1) flow.steps[si].profileId = sel.value;
+        const activeP = profiles.find(p => p.id === sel.value);
+        const presetSel = sel.closest('.step-cfg').querySelector('.step-preset-sel');
+        if (presetSel && activeP) {
+          presetSel.innerHTML = activeP.presets.map(p =>
+            `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+        }
+      });
+    });
+
+    // preset change
+    panel.querySelectorAll('.step-preset-sel').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const item = sel.closest('.step-item');
+        const si = item ? parseInt(item.dataset.si) : -1;
+        if (si > -1) flow.steps[si].presetId = sel.value;
+      });
+    });
+
+    // click / waitFor step picker
+    panel.querySelectorAll('.step-pick').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const item = btn.closest('.step-item');
+        const si = item ? parseInt(item.dataset.si) : -1;
+        const input = btn.parentElement?.querySelector('.step-sel');
+        if (!input) return;
+        // ★ 拾取前先持久化当前流程：否则 popup 关闭后新步骤会丢失，
+        //   重启 popup 也无法将拾取结果回填到正确的步骤
+        const nameInput = panel.querySelector(`#fn-${flow.id}`);
+        flow.name = nameInput?.value.trim() || flow.name;
+        flow.steps = collectSteps();
+        await saveFlows();
+        startPicker({ mode: 'flow', flowId: flow.id, stepIndex: si, inputEl: input });
+      });
+    });
+
+    // 测试点击元素
+    panel.querySelectorAll('.step-test-click').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const input = btn.parentElement?.querySelector('.step-sel');
+        const selector = input?.value.trim();
+        if (!selector) { showToast('请先填写 CSS 选择器', 'warning'); return; }
+        try {
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (!tab?.id) { showToast('无法获取当前页面', 'error'); return; }
+          await ensureContentScript(tab.id);
+          await chrome.tabs.sendMessage(tab.id, { action: 'testClick', selector });
+        } catch (e) { showToast('测试点击失败：' + e.message, 'error'); }
+      });
+    });
+
+    // delete step
+    panel.querySelectorAll('.step-del').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const si = parseInt(btn.dataset.si);
+        // ★ 先收集当前 DOM 中所有步骤，避免删除重新渲染时丢失已拾取的内容
+        flow.steps = collectSteps();
+        flow.steps.splice(si, 1);
+        const list = document.getElementById(slId);
+        if (list) {
+          list.innerHTML = flow.steps.map((s,i) => buildStepHTML(s,i)).join('');
+          refillSelectors();
+          rebindSteps();
+        }
+      });
+    });
+  }
+  rebindSteps();
+
+  // add step
+  panel.querySelector(`#add-step-${flow.id}`)?.addEventListener('click', () => {
+    // ★ 先收集当前 DOM 中的步骤，避免重新渲染后之前已填入的选择器丢失
+    flow.steps = collectSteps();
+    flow.steps.push({ type: 'click', selector: '', wait: 300 });
+    const list = document.getElementById(slId);
+    if (list) {
+      list.innerHTML = flow.steps.map((s,i) => buildStepHTML(s,i)).join('');
+      refillSelectors();
+      rebindSteps();
+    }
+  });
+
+  // collect steps from DOM — 保留所有存在的字段，避免切换步骤类型后原类型数据丢失
+  function collectSteps() {
+    return [...panel.querySelectorAll('.step-item')].map(item => {
+      const type = item.querySelector('.step-type-sel')?.value || 'click';
+      const step = { type };
+      const selInp = item.querySelector('.step-sel');
+      if (selInp) step.selector = selInp.value.trim();
+      const waitInp = item.querySelector('[data-key="wait"]');
+      if (waitInp) step.wait = parseInt(waitInp.value || '300');
+      const profileIdInp = item.querySelector('[data-key="profileId"]');
+      if (profileIdInp) step.profileId = profileIdInp.value || profiles[0]?.id;
+      const presetIdInp = item.querySelector('[data-key="presetId"]');
+      if (presetIdInp) step.presetId = presetIdInp.value || '';
+      const delayInp = item.querySelector('[data-key="delay"]');
+      if (delayInp) step.delay = parseInt(delayInp.value || '200');
+      const msInp = item.querySelector('[data-key="ms"]');
+      if (msInp) step.ms = parseInt(msInp.value || '500');
+      const timeoutInp = item.querySelector('[data-key="timeout"]');
+      if (timeoutInp) step.timeout = parseInt(timeoutInp.value || '5000');
+      return step;
+    });
+  }
+
+  // save
+  panel.querySelector('[data-act="save-flow"]')?.addEventListener('click', async () => {
+    const nameInput = panel.querySelector(`#fn-${flow.id}`);
+    const name = nameInput?.value.trim();
+    if (!name) {
+      showToast('⚠️ 请输入流程名称', 'warning');
+      nameInput?.focus();
+      return;
+    }
+    flow.name  = name;
+    flow.steps = collectSteps();
+    try {
+      await saveFlows();
+      showToast('💾 流程已保存', 'success');
+      renderFlows();
+      // 保存后保持当前流程处于展开编辑状态，避免用户误以为未保存
+      const list = document.getElementById('flow-list');
+      const toggleBtn = list?.querySelector(`.flow-toggle[data-fid="${flow.id}"]`);
+      if (toggleBtn) toggleBtn.click();
+    } catch (e) {
+      showToast('❌ 流程保存失败：' + e.message, 'error');
+    }
+  });
+
+  // run
+  panel.querySelector('.flow-run-btn')?.addEventListener('click', async () => {
+    flow.steps = collectSteps();
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) { showToast('无法获取当前页面', 'error'); return; }
+    try {
+      await chrome.tabs.sendMessage(tab.id, { action: 'runFlow', steps: enrichFlowSteps(flow.steps) });
+      showToast(`⚡ 流程「${flow.name}」已启动`, 'success');
+    } catch (e) { showToast('运行失败：' + e.message, 'error'); }
+  });
+
+  // delete
+  panel.querySelector('[data-act="del-flow"]')?.addEventListener('click', async () => {
+    if (!confirm(`确定删除流程「${flow.name}」？`)) return;
+    flows = flows.filter(f => f.id !== flow.id);
+    await saveFlows();
+    renderFlows();
+    showToast('🗑️ 已删除', 'info');
+  });
 }
