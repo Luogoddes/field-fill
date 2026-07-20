@@ -10,9 +10,9 @@
 
 <p align="center">
   <a href="https://microsoftedge.microsoft.com/addons/detail/%E5%AD%97%E6%AE%B5%E5%A1%AB%E5%85%85/aekjpmdkkenfoclhkmmjjchnebfaopej?hl=zh-CN">
-    <img src="https://img.shields.io/badge/Edge%20Add--ons-1.4.6-0078D7?style=for-the-badge&logo=microsoftedge&logoColor=white" alt="Edge Add-ons" />
+    <img src="https://img.shields.io/badge/Edge%20Add--ons-1.4.7-0078D7?style=for-the-badge&logo=microsoftedge&logoColor=white" alt="Edge Add-ons" />
   </a>
-  <img src="https://img.shields.io/badge/Chrome%20MV3-1.4.6-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome MV3" />
+  <img src="https://img.shields.io/badge/Chrome%20MV3-1.4.7-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome MV3" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License" />
   <img src="https://img.shields.io/badge/Platform-Chrome%20%7C%20Edge-4ADE80?style=for-the-badge" alt="Platform" />
 </p>
@@ -116,6 +116,16 @@ field-fill/
 
 ## 📝 更新日志
 
+### v1.4.7 (2026-07-20)
+
+- ✨ **新增页面批量拾取模式**：点击「页面拾取」后高亮页面所有可填充字段，滚动时 overlay 实时跟随；每 500ms 自动扫描新出现的字段
+- 📋 **新增「页面预选」面板**：拾取字段先进入可编辑的预选列表，确认后再批量添加到已配置字段
+- 🐛 **修复页面拾取 overlay 滚动定位 bug**：fixed 定位应直接取视口坐标，不再错误叠加 `window.scroll`
+- 🐛 **修复预选面板类型下拉框未默认选中**：识别到的 `select / date / textarea` 等类型会正确回显
+- 📋 **拾取确认后自动复制 selector**：空格 / 点击确认拾取时，选择器会自动写入剪贴板
+- 🐛 **支持 Ant Design / 自定义下拉组件填充**：展开下拉菜单并点击匹配选项
+- 🔖 **统一版本号**：所有文件版本号统一为 `1.4.7`
+
 ### v1.4.6 (2026-07-20)
 
 - ✨ **流程步骤支持拖拽排序**：自动化 Tab 中每个步骤左侧新增 `⋮⋮` 手柄，可上下拖动调整执行顺序
@@ -123,7 +133,6 @@ field-fill/
 - 🐛 **修复运行流程提示“流程无步骤”**：popup 与 content.js 的消息字段统一为 `flow.steps`
 - 🐛 **修复运行流程连接错误**：运行前先 `ensureContentScript`，未注入时自动注入 content.js
 - ⭐ **支持设置默认自动化流程**：流程卡片右上角新增默认按钮，右侧 Dock 主键优先执行默认流程
-- 🔖 **统一版本号**：所有文件版本号统一为 `1.4.6`
 
 ### v1.4.5 (2026-07-19)
 

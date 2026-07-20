@@ -2562,7 +2562,24 @@
         </div>
       </div>
 
-      <!-- 3. 已配置字段 (field list with shared values) -->
+      <!-- 3. 页面预选 (from page picker, editable before adding to fields) -->
+      <div class="sec" id="page-candidates-sec" style="display:none;">
+        <div class="sec-hd">
+          <span>📋 页面预选 <span id="candidate-count" style="color:var(--t2);font-weight:400;font-size:11px;"></span></span>
+          <div class="sec-hd-r">
+            <button class="btn btn-err btn-sm" id="clear-candidates-btn">清空</button>
+            <button class="btn btn-ok btn-sm" id="add-candidates-btn">✅ 添加到配置</button>
+          </div>
+        </div>
+        <div class="sec-bd">
+          <div style="font-size:11px;color:var(--t2);margin-bottom:8px;line-height:1.5;">
+            页面拾取时点击 ＋ 加入的字段会先出现在这里。你可以编辑字段名、选择器和类型，确认后再点击「添加到配置」。
+          </div>
+          <div class="flist" id="candidate-list"></div>
+        </div>
+      </div>
+
+      <!-- 4. 已配置字段 (field list with shared values) -->
       <div class="sec">
         <div class="sec-hd">
           <span>📝 已配置字段 <span id="field-count" style="color:var(--t2);font-weight:400;font-size:11px;"></span></span>

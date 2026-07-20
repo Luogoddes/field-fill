@@ -1,8 +1,8 @@
 /**
- * content.js — 字段填充 · Universal Field Filler v1.4.6
+ * content.js — 字段填充 · Universal Field Filler v1.4.7
  * 洛 - 愿执一生笔，画汝眉上柳...
  *
- * ★ v1.4.6 拾取器方案：
+ * ★ v1.4.7 拾取器方案：
  *   鼠标悬停到表单元素时，通过 chrome.runtime.sendMessage 实时发送元素信息到 background
  *   background 存入 storage，popup 保持打开并轮询 storage，实时更新选择器输入框
  *   不需要关闭 popup，不需要浮层面板
@@ -420,6 +420,7 @@
   let _pagePickerActive = false;
   let _pageOverlays = [];
   let _pagePickBadge = null;
+  let _pagePickInterval = null;
 
   function isVisible(el) {
     const rect = el.getBoundingClientRect();
@@ -437,10 +438,21 @@
 
     _pagePickBadge = document.createElement('div');
     _pagePickBadge.id = '__uff_page_pick_badge';
-    _pagePickBadge.textContent = '📋 页面拾取模式 · 点击 + 添加字段  |  按 ESC 退出';
+    _pagePickBadge.textContent = '📋 页面拾取模式 · 点击 + 加入预选  |  按 ESC 退出';
     document.body.appendChild(_pagePickBadge);
 
     document.addEventListener('keydown', _onPageKey, true);
+    window.addEventListener('scroll', _onPageScroll, true);
+    window.addEventListener('scroll', _onPageScrollEnd, true);
+    window.addEventListener('resize', _onPageScroll, true);
+    window.addEventListener('resize', _onPageScrollEnd, true);
+
+    // 每 500ms 刷新一次，兼容 div 内部滚动等 window scroll 监听不到的场景
+    _pagePickInterval = setInterval(function() {
+      if (!_pagePickerActive) return;
+      refreshPageOverlays();
+      scanPageFields();
+    }, 500);
   }
 
   function stopPagePicker() {
@@ -450,6 +462,13 @@
     _pageOverlays = [];
     if (_pagePickBadge) { _pagePickBadge.remove(); _pagePickBadge = null; }
     document.removeEventListener('keydown', _onPageKey, true);
+    window.removeEventListener('scroll', _onPageScroll, true);
+    window.removeEventListener('scroll', _onPageScrollEnd, true);
+    window.removeEventListener('resize', _onPageScroll, true);
+    window.removeEventListener('resize', _onPageScrollEnd, true);
+    if (_pageScrollRAF) { cancelAnimationFrame(_pageScrollRAF); _pageScrollRAF = null; }
+    clearTimeout(_pageScanDebounce);
+    if (_pagePickInterval) { clearInterval(_pagePickInterval); _pagePickInterval = null; }
   }
 
   function scanPageFields() {
@@ -462,10 +481,12 @@
       '.el-textarea__inner'
     ];
     const elements = document.querySelectorAll(selectors.join(', '));
-    elements.forEach((el, idx) => {
+    elements.forEach(function(el, idx) {
       if (!isVisible(el)) return;
       // 对于自定义组件，以容器为边界
       const target = el.classList.contains('ant-select') ? el : el;
+      // 已存在该元素的 overlay 则跳过
+      if (_pageOverlays.some(o => o.__targetEl === target)) return;
       createPageOverlay(target, idx);
     });
     updatePagePickBadge();
@@ -475,9 +496,11 @@
     const rect = el.getBoundingClientRect();
     const overlay = document.createElement('div');
     overlay.className = '__uff-page-pick-overlay';
+    overlay.__targetEl = el;
     overlay.dataset.index = idx;
-    overlay.style.left   = (rect.left + window.scrollX) + 'px';
-    overlay.style.top    = (rect.top + window.scrollY) + 'px';
+    // overlay 是 position:fixed，坐标直接取相对于视口的 getBoundingClientRect
+    overlay.style.left   = rect.left + 'px';
+    overlay.style.top    = rect.top + 'px';
     overlay.style.width  = rect.width + 'px';
     overlay.style.height = rect.height + 'px';
 
@@ -505,29 +528,61 @@
     const selector = getSel(el);
     const type     = getElType(el);
     const label    = getLabel(el) || el.name || el.id || el.placeholder || '';
-    const field    = { selector, type, label, ts: Date.now() };
+    const candidateId = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const field    = { candidateId, selector, type, label, ts: Date.now() };
 
-    chrome.storage.local.get('__pagePickedFields', function(data) {
-      const arr = data.__pagePickedFields || [];
+    chrome.storage.local.get('__pagePickedCandidates', function(data) {
+      const arr = data.__pagePickedCandidates || [];
       // 简单去重：相同 selector 不再添加
       if (arr.some(f => f.selector === selector)) {
-        showToast('该字段已在待添加列表中', 'warning');
+        showToast('该字段已在预选列表中', 'warning');
         return;
       }
       arr.push(field);
-      chrome.storage.local.set({ __pagePickedFields: arr }, function() {
+      chrome.storage.local.set({ __pagePickedCandidates: arr }, function() {
         overlay.classList.add('added');
         updatePagePickBadge();
-        showToast('✅ 已添加：' + (label || selector), 'success', 1400);
+        showToast('✅ 已加入预选：' + (label || selector), 'success', 1400);
       });
     });
   }
 
   function updatePagePickBadge() {
     if (!_pagePickBadge) return;
-    chrome.storage.local.get('__pagePickedFields', function(data) {
-      const count = (data.__pagePickedFields || []).length;
-      _pagePickBadge.textContent = '📋 页面拾取模式 · 已添加 ' + count + ' 个字段  |  按 ESC 退出';
+    chrome.storage.local.get('__pagePickedCandidates', function(data) {
+      const count = (data.__pagePickedCandidates || []).length;
+      _pagePickBadge.textContent = '📋 页面拾取模式 · 已加入预选 ' + count + ' 个字段  |  按 ESC 退出';
+    });
+  }
+
+  // 滚动时动态刷新所有 overlay 位置
+  let _pageScrollRAF = null;
+  function _onPageScroll() {
+    if (_pageScrollRAF) cancelAnimationFrame(_pageScrollRAF);
+    _pageScrollRAF = requestAnimationFrame(refreshPageOverlays);
+  }
+
+  let _pageScanDebounce = null;
+  function _onPageScrollEnd() {
+    clearTimeout(_pageScanDebounce);
+    _pageScanDebounce = setTimeout(function() {
+      if (_pagePickerActive) scanPageFields();
+    }, 300);
+  }
+
+  function refreshPageOverlays() {
+    _pageOverlays.forEach(function(overlay) {
+      const el = overlay.__targetEl;
+      if (!el || !document.body.contains(el)) { overlay.remove(); return; }
+      const rect = el.getBoundingClientRect();
+      const visible = isVisible(el) && rect.bottom > 0 && rect.top < window.innerHeight;
+      overlay.style.display = visible ? 'block' : 'none';
+      if (!visible) return;
+      // fixed 定位直接取视口坐标
+      overlay.style.left   = rect.left + 'px';
+      overlay.style.top    = rect.top + 'px';
+      overlay.style.width  = rect.width + 'px';
+      overlay.style.height = rect.height + 'px';
     });
   }
 

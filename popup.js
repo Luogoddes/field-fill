@@ -1,8 +1,8 @@
 /**
- * popup.js — 字段填充 · Universal Field Filler v1.4.6
+ * popup.js — 字段填充 · Universal Field Filler v1.4.7
  * 洛 - 愿执一生笔，画汝眉上柳...
  *
- * ★ v1.4.6 修复：
+ * ★ v1.4.7 修复：
  *   1. 预设填充显示所有 Profile 的预设（不再只显示 activeProfile）
  *   2. 详情「复制」→「文本预览」按钮，展示 "字段名：值" 格式文本
  *   3. 拾取器：popup 保持打开，通过 storage 轮询实时更新选择器输入框
@@ -242,7 +242,7 @@ function switchPanel(id) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.panel === id));
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === `panel-${id}`));
   if (id === 'presets') renderPresets();
-  if (id === 'fields')  { renderProfileChips(); renderFields(); }
+  if (id === 'fields')  { renderProfileChips(); renderFields(); renderCandidates(); }
   if (id === 'flows')   renderFlows();
 }
 
@@ -866,6 +866,131 @@ function renderFields() {
   initDragSort(list, profile);
 }
 
+// 渲染「页面预选」面板：从 storage 读取候选字段，可编辑后再批量加入配置
+async function renderCandidates() {
+  const sec       = document.getElementById('page-candidates-sec');
+  const list      = document.getElementById('candidate-list');
+  const countEl   = document.getElementById('candidate-count');
+  const addBtn    = document.getElementById('add-candidates-btn');
+  const clearBtn  = document.getElementById('clear-candidates-btn');
+  const stored    = await chrome.storage.local.get('__pagePickedCandidates');
+  const candidates = stored.__pagePickedCandidates || [];
+
+  if (countEl) countEl.textContent = `(${candidates.length})`;
+  if (!sec) return;
+
+  if (!candidates.length) {
+    sec.style.display = 'none';
+    if (list) list.innerHTML = '';
+    return;
+  }
+
+  sec.style.display = 'block';
+
+  const typeOptions = (selected) => `
+    <option value="text" ${selected === 'text' ? 'selected' : ''}>文本</option>
+    <option value="select" ${selected === 'select' ? 'selected' : ''}>下拉</option>
+    <option value="textarea" ${selected === 'textarea' ? 'selected' : ''}>多行</option>
+    <option value="time" ${selected === 'time' ? 'selected' : ''}>时间</option>
+    <option value="date" ${selected === 'date' ? 'selected' : ''}>日期</option>
+  `;
+
+  list.innerHTML = candidates.map(c => `
+    <div class="fitem" data-cid="${esc(c.candidateId)}">
+      <span class="ftype ${c.type || 'text'}">${(c.type || 'text') === 'textarea' ? 'ta' : (c.type || 'text')}</span>
+      <div class="finfo" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;">
+        <input class="cname-e inp" value="${esc(c.name || c.label || '')}" data-cid="${esc(c.candidateId)}" placeholder="字段名称" style="font-weight:600;">
+        <input class="csel-e inp" value="${esc(c.selector)}" data-cid="${esc(c.candidateId)}" placeholder="CSS 选择器" style="color:var(--t1);font-size:11px;padding:4px 6px;">
+      </div>
+      <select class="ctype-e inp" data-cid="${esc(c.candidateId)}" style="width:70px;flex-shrink:0;">${typeOptions(c.type || 'text')}</select>
+      <button class="bico d" data-cid="${esc(c.candidateId)}" title="删除">✕</button>
+    </div>
+  `).join('');
+
+  // 名称编辑
+  list.querySelectorAll('.cname-e').forEach(inp => {
+    inp.addEventListener('change', async () => {
+      const cid = inp.dataset.cid;
+      const data = await chrome.storage.local.get('__pagePickedCandidates');
+      const arr = data.__pagePickedCandidates || [];
+      const c = arr.find(x => x.candidateId === cid);
+      if (c) { c.name = inp.value.trim(); await chrome.storage.local.set({ __pagePickedCandidates: arr }); }
+    });
+  });
+
+  // 选择器编辑
+  list.querySelectorAll('.csel-e').forEach(inp => {
+    inp.addEventListener('change', async () => {
+      const cid = inp.dataset.cid;
+      const data = await chrome.storage.local.get('__pagePickedCandidates');
+      const arr = data.__pagePickedCandidates || [];
+      const c = arr.find(x => x.candidateId === cid);
+      if (c) { c.selector = inp.value.trim(); await chrome.storage.local.set({ __pagePickedCandidates: arr }); }
+    });
+  });
+
+  // 类型编辑
+  list.querySelectorAll('.ctype-e').forEach(sel => {
+    sel.addEventListener('change', async () => {
+      const cid = sel.dataset.cid;
+      const data = await chrome.storage.local.get('__pagePickedCandidates');
+      const arr = data.__pagePickedCandidates || [];
+      const c = arr.find(x => x.candidateId === cid);
+      if (c) { c.type = sel.value; await chrome.storage.local.set({ __pagePickedCandidates: arr }); renderCandidates(); }
+    });
+  });
+
+  // 删除单个候选
+  list.querySelectorAll('.bico.d').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const cid = btn.dataset.cid;
+      const data = await chrome.storage.local.get('__pagePickedCandidates');
+      const arr = (data.__pagePickedCandidates || []).filter(x => x.candidateId !== cid);
+      await chrome.storage.local.set({ __pagePickedCandidates: arr });
+      renderCandidates();
+    });
+  });
+
+  // 添加到配置
+  if (addBtn) {
+    addBtn.onclick = async () => {
+      const profile = getActiveProfile();
+      if (!profile) { showToast('请先选择或创建 Profile', 'warning'); return; }
+      const data = await chrome.storage.local.get('__pagePickedCandidates');
+      const arr = data.__pagePickedCandidates || [];
+      if (!arr.length) return;
+      let added = 0;
+      arr.forEach(c => {
+        const selector = (c.selector || '').trim();
+        const name = (c.name || c.label || `字段 ${(profile.fields || []).length + 1}`).trim();
+        if (!selector) return;
+        if ((profile.fields || []).some(f => f.selector === selector)) return;
+        profile.fields.push({
+          id: uid(),
+          name: name || `字段 ${(profile.fields || []).length + 1}`,
+          selector: selector,
+          type: c.type || 'text'
+        });
+        added++;
+      });
+      await saveProfiles();
+      await chrome.storage.local.remove('__pagePickedCandidates');
+      renderCandidates();
+      renderFields();
+      showToast(`✅ 已添加 ${added} 个字段到配置`, 'success');
+    };
+  }
+
+  // 清空候选
+  if (clearBtn) {
+    clearBtn.onclick = async () => {
+      await chrome.storage.local.remove('__pagePickedCandidates');
+      renderCandidates();
+      showToast('🗑️ 已清空页面预选', 'info');
+    };
+  }
+}
+
 function initDragSort(list, profile) {
   let di = null;
   list.querySelectorAll('.fitem').forEach(item => {
@@ -1238,10 +1363,10 @@ function downloadJSON(data, filename) {
   const a = Object.assign(document.createElement('a'), {href:url, download:filename});
   document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 }
-const exportAll = () => { downloadJSON({_type:'uff-backup',version:'1.4.6',profiles,exportedAt:Date.now()}, 'uff-backup.json'); showToast('📤 备份已导出','success'); };
+const exportAll = () => { downloadJSON({_type:'uff-backup',version:'1.4.7',profiles,exportedAt:Date.now()}, 'uff-backup.json'); showToast('📤 备份已导出','success'); };
 const exportProfile = () => {
   const p=getActiveProfile(); if(!p){showToast('请先选择 Profile','error');return;}
-  downloadJSON({_type:'uff-profile',version:'1.4.6',profile:p},`profile-${p.name}.json`); showToast('📋 已导出','success');
+  downloadJSON({_type:'uff-profile',version:'1.4.7',profile:p},`profile-${p.name}.json`); showToast('📋 已导出','success');
 };
 async function importFile() {
   return new Promise(resolve=>{
@@ -1518,36 +1643,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     ]);
   }
 
-  // 恢复页面批量拾取结果：将点击 + 添加的字段导入当前 Profile
-  const pagePickedStored = await chrome.storage.local.get('__pagePickedFields');
-  const pagePickedFields = pagePickedStored.__pagePickedFields;
-  if (Array.isArray(pagePickedFields) && pagePickedFields.length) {
-    const profile = getActiveProfile();
-    if (profile) {
-      let added = 0;
-      pagePickedFields.forEach(f => {
-        // 简单去重：相同 selector 不再添加
-        if ((profile.fields || []).some(existing => existing.selector === f.selector)) return;
-        profile.fields.push({
-          id: uid(),
-          name: f.label || f.name || `字段 ${(profile.fields || []).length + 1}`,
-          selector: f.selector,
-          type: f.type || 'text'
-        });
-        added++;
-      });
-      if (added > 0) {
-        await saveProfiles();
-        switchPanel('fields');
-        renderFields();
-        showToast(`✅ 已从页面拾取导入 ${added} 个字段`, 'success');
-      } else {
-        showToast('页面拾取字段已存在，未重复导入', 'warning');
-      }
-    } else {
-      showToast('请先创建 Profile 再导入页面拾取字段', 'warning');
-    }
-    await chrome.storage.local.remove('__pagePickedFields');
+  // 恢复页面批量拾取结果：渲染到「页面预选」面板，不直接加入已配置字段
+  const pagePickedStored = await chrome.storage.local.get('__pagePickedCandidates');
+  const pagePickedCandidates = pagePickedStored.__pagePickedCandidates;
+  if (Array.isArray(pagePickedCandidates) && pagePickedCandidates.length) {
+    switchPanel('fields');
+    renderCandidates();
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab?.id) await chrome.tabs.sendMessage(tab.id, { action: 'stopPagePicker' }).catch(() => {});

@@ -1,9 +1,9 @@
 /**
  * background.js — Service Worker
- * 字段填充 · Universal Field Filler v1.4.6
+ * 字段填充 · Universal Field Filler v1.4.7
  * 洛 - 愿执一生笔，画汝眉上柳...
  *
- * ★ v1.4.6 修复：
+ * ★ v1.4.7 修复：
  *   - 右键菜单 title 不能含 emoji，改为纯文字（emoji 导致创建失败）
  *   - 右键菜单在 onInstalled + onStartup 双重注册确保生效
  *   - 新增 pickerHover 消息：content.js 实时发回悬停元素信息，存入 storage 供 popup 轮询
@@ -120,10 +120,10 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   await setupContextMenu();
   if (reason === 'install') {
     await chrome.storage.local.set({ profiles: [DEFAULT_PROFILE], theme: 'auto', contextMenuEnabled: true });
-    console.log('[UFF] v1.4.6 installed');
+    console.log('[UFF] v1.4.7 installed');
   } else if (reason === 'update') {
     await migrateData();
-    console.log('[UFF] v1.4.6 updated');
+    console.log('[UFF] v1.4.7 updated');
   }
 });
 
