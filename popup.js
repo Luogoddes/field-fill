@@ -1048,6 +1048,19 @@ function stopPicker() {
   }
 }
 
+// 启动页面批量拾取：高亮所有可填充字段，点击 + 添加
+async function startPagePicker() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) { showToast('无法获取当前页面', 'error'); return; }
+  try {
+    await ensureContentScript(tab.id);
+    await chrome.tabs.sendMessage(tab.id, { action: 'startPagePicker' });
+    window.close();
+  } catch (e) {
+    showToast('页面拾取启动失败：' + e.message, 'error');
+  }
+}
+
 // ════════════════════════════════════════════
 //  Batch Scan Page
 // ════════════════════════════════════════════
@@ -1324,6 +1337,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Fields
   document.getElementById('new-profile-btn').addEventListener('click', createProfile);
   document.getElementById('scan-btn').addEventListener('click', scanPage);
+  document.getElementById('page-pick-btn').addEventListener('click', startPagePicker);
   document.getElementById('pick-btn').addEventListener('click', () => startPicker());
   document.getElementById('stop-pick-link').addEventListener('click', e=>{ e.preventDefault(); stopPicker(); });
   document.getElementById('er-selall').addEventListener('click', ()=>{});  // bound in renderExtractResult
@@ -1502,6 +1516,42 @@ document.addEventListener('DOMContentLoaded', async () => {
       '__pickerTargetMode', '__pickerHover',
       '__pickerTargetFlowId', '__pickerTargetStepIndex'
     ]);
+  }
+
+  // 恢复页面批量拾取结果：将点击 + 添加的字段导入当前 Profile
+  const pagePickedStored = await chrome.storage.local.get('__pagePickedFields');
+  const pagePickedFields = pagePickedStored.__pagePickedFields;
+  if (Array.isArray(pagePickedFields) && pagePickedFields.length) {
+    const profile = getActiveProfile();
+    if (profile) {
+      let added = 0;
+      pagePickedFields.forEach(f => {
+        // 简单去重：相同 selector 不再添加
+        if ((profile.fields || []).some(existing => existing.selector === f.selector)) return;
+        profile.fields.push({
+          id: uid(),
+          name: f.label || f.name || `字段 ${(profile.fields || []).length + 1}`,
+          selector: f.selector,
+          type: f.type || 'text'
+        });
+        added++;
+      });
+      if (added > 0) {
+        await saveProfiles();
+        switchPanel('fields');
+        renderFields();
+        showToast(`✅ 已从页面拾取导入 ${added} 个字段`, 'success');
+      } else {
+        showToast('页面拾取字段已存在，未重复导入', 'warning');
+      }
+    } else {
+      showToast('请先创建 Profile 再导入页面拾取字段', 'warning');
+    }
+    await chrome.storage.local.remove('__pagePickedFields');
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) await chrome.tabs.sendMessage(tab.id, { action: 'stopPagePicker' }).catch(() => {});
+    } catch (_) {}
   }
 });
 

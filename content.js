@@ -76,6 +76,36 @@
         font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;
         animation:uffIn .25s ease;white-space:nowrap;
       }
+      /* Page picker overlays */
+      .__uff-page-pick-overlay{
+        position:fixed;z-index:2147483646;box-sizing:border-box;
+        border:2px dashed #4ADE80;border-radius:6px;
+        background:rgba(74,222,128,.08);pointer-events:none;
+        transition:opacity .2s;
+      }
+      .__uff-page-pick-overlay.added{opacity:.35;border-style:solid;}
+      .__uff-page-pick-add{
+        position:absolute;top:-11px;right:-11px;width:22px;height:22px;
+        border-radius:50%;background:#4ADE80;color:#fff;border:none;
+        font-size:15px;line-height:22px;text-align:center;cursor:pointer;
+        pointer-events:auto;box-shadow:0 2px 8px rgba(0,0,0,.2);
+        display:flex;align-items:center;justify-content:center;
+        transition:transform .15s, background .15s;
+      }
+      .__uff-page-pick-add:hover{transform:scale(1.1);background:#22c55e;}
+      .__uff-page-pick-label{
+        position:absolute;left:0;bottom:100%;margin-bottom:4px;
+        background:rgba(0,0,0,.75);color:#fff;font-size:11px;
+        padding:2px 6px;border-radius:4px;white-space:nowrap;pointer-events:none;
+      }
+      #__uff_page_pick_badge{
+        position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+        z-index:2147483647;background:linear-gradient(135deg,#10b981,#34d399);
+        color:#fff;padding:8px 18px;border-radius:999px;font-size:12px;font-weight:600;
+        box-shadow:0 4px 16px rgba(16,185,129,.4);pointer-events:none;
+        font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;
+        animation:uffIn .25s ease;white-space:nowrap;
+      }
     `;
     (document.head || document.documentElement).appendChild(s);
   }
@@ -214,6 +244,44 @@
     return true;
   }
 
+  // 填充 Ant Design / 自定义下拉组件：展开 → 输入 → 点击匹配选项
+  function setAntSelectValue(container, val) {
+    const raw = String(val).trim();
+    if (!raw) return false;
+
+    // 先点击容器展开下拉菜单
+    container.focus();
+    container.click();
+
+    // 如果是可搜索的 select，先在输入框里输入值触发筛选
+    const input = container.querySelector('.ant-select-selection-search-input');
+    if (input && !input.readOnly && input.style.opacity !== '0') {
+      input.focus();
+      input.value = raw;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    // 等待下拉菜单渲染后点击匹配项
+    setTimeout(function() {
+      const selectors = '.ant-select-item-option-content, .ant-select-dropdown-menu-item-content, .ant-cascader-menu-item-content';
+      const options = document.querySelectorAll(selectors);
+      const target = Array.from(options).find(function(o) {
+        const text = o.textContent.trim();
+        return text === raw || text.toLowerCase() === raw.toLowerCase() || text.includes(raw);
+      });
+      if (target) {
+        const item = target.closest('.ant-select-item-option, .ant-select-dropdown-menu-item, .ant-cascader-menu-item');
+        if (item) {
+          item.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+          item.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true }));
+          item.click();
+        }
+      }
+    }, 120);
+
+    return true;
+  }
+
   // ── Core fill ─────────────────────────────────────────
   function doFill(config, fieldMap) {
     let success = 0, fail = 0;
@@ -234,8 +302,18 @@
           el.dispatchEvent(new Event('change', { bubbles: true }));
           success++;
         } else if (def.type === 'select') {
-          if (setSelectValue(el, val)) success++;
-          else { fail++; failedFields.push({ fid, selector: def.selector, reason: '选项不匹配' }); }
+          // 原生 <select>
+          if (el.tagName === 'SELECT') {
+            if (setSelectValue(el, val)) success++;
+            else { fail++; failedFields.push({ fid, selector: def.selector, reason: '选项不匹配' }); }
+          }
+          // Ant Design / 自定义下拉
+          else if ((el.classList && el.classList.contains('ant-select')) || (el.closest && el.closest('.ant-select'))) {
+            const container = (el.classList && el.classList.contains('ant-select')) ? el : el.closest('.ant-select');
+            if (setAntSelectValue(container, val)) success++;
+            else { fail++; failedFields.push({ fid, selector: def.selector, reason: '自定义下拉展开失败' }); }
+          }
+          else { fail++; failedFields.push({ fid, selector: def.selector, reason: '非可填充下拉元素' }); }
         } else if (def.type === 'time' || def.type === 'date') {
           const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
           setter ? setter.call(el, String(val)) : (el.value = String(val));
@@ -256,6 +334,24 @@
   let _badge = null;
   let _sendThrottle = null; // throttle sendMessage calls
   let _confirming = false;  // 防止确认过程中重复触发
+
+  // 复制文本到剪贴板（兼容旧浏览器）
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(function() { fallbackCopy(text); });
+    } else {
+      fallbackCopy(text);
+    }
+    function fallbackCopy(str) {
+      var ta = document.createElement('textarea');
+      ta.value = str;
+      ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      try { document.execCommand('copy'); } catch (_) {}
+      document.body.removeChild(ta);
+    }
+  }
 
   // 当用户 hover/click 到 SVG、图标、span 等内层元素时，向上查找到真正可点击的父元素
   function findClickableTarget(el) {
@@ -320,6 +416,128 @@
     }, delay);
   }
 
+  // ── Page picker: batch highlight all fillable fields on the page ──
+  let _pagePickerActive = false;
+  let _pageOverlays = [];
+  let _pagePickBadge = null;
+
+  function isVisible(el) {
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+    return true;
+  }
+
+  function startPagePicker() {
+    if (_pagePickerActive) return;
+    _pagePickerActive = true;
+    stopPicker();
+    scanPageFields();
+
+    _pagePickBadge = document.createElement('div');
+    _pagePickBadge.id = '__uff_page_pick_badge';
+    _pagePickBadge.textContent = '📋 页面拾取模式 · 点击 + 添加字段  |  按 ESC 退出';
+    document.body.appendChild(_pagePickBadge);
+
+    document.addEventListener('keydown', _onPageKey, true);
+  }
+
+  function stopPagePicker() {
+    if (!_pagePickerActive) return;
+    _pagePickerActive = false;
+    _pageOverlays.forEach(o => o.remove());
+    _pageOverlays = [];
+    if (_pagePickBadge) { _pagePickBadge.remove(); _pagePickBadge = null; }
+    document.removeEventListener('keydown', _onPageKey, true);
+  }
+
+  function scanPageFields() {
+    const selectors = [
+      'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]):not([type="file"])',
+      'textarea',
+      'select',
+      '.ant-select:not(.ant-select-disabled)',
+      '.el-input__inner',
+      '.el-textarea__inner'
+    ];
+    const elements = document.querySelectorAll(selectors.join(', '));
+    elements.forEach((el, idx) => {
+      if (!isVisible(el)) return;
+      // 对于自定义组件，以容器为边界
+      const target = el.classList.contains('ant-select') ? el : el;
+      createPageOverlay(target, idx);
+    });
+    updatePagePickBadge();
+  }
+
+  function createPageOverlay(el, idx) {
+    const rect = el.getBoundingClientRect();
+    const overlay = document.createElement('div');
+    overlay.className = '__uff-page-pick-overlay';
+    overlay.dataset.index = idx;
+    overlay.style.left   = (rect.left + window.scrollX) + 'px';
+    overlay.style.top    = (rect.top + window.scrollY) + 'px';
+    overlay.style.width  = rect.width + 'px';
+    overlay.style.height = rect.height + 'px';
+
+    const label = document.createElement('div');
+    label.className = '__uff-page-pick-label';
+    label.textContent = (getLabel(el) || el.name || el.id || el.placeholder || '字段') + ' · ' + getElType(el);
+    overlay.appendChild(label);
+
+    const btn = document.createElement('button');
+    btn.className = '__uff-page-pick-add';
+    btn.innerHTML = '＋';
+    btn.title = '添加到字段列表';
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      addPagePickedField(el, overlay);
+    });
+    overlay.appendChild(btn);
+
+    document.body.appendChild(overlay);
+    _pageOverlays.push(overlay);
+  }
+
+  function addPagePickedField(el, overlay) {
+    const selector = getSel(el);
+    const type     = getElType(el);
+    const label    = getLabel(el) || el.name || el.id || el.placeholder || '';
+    const field    = { selector, type, label, ts: Date.now() };
+
+    chrome.storage.local.get('__pagePickedFields', function(data) {
+      const arr = data.__pagePickedFields || [];
+      // 简单去重：相同 selector 不再添加
+      if (arr.some(f => f.selector === selector)) {
+        showToast('该字段已在待添加列表中', 'warning');
+        return;
+      }
+      arr.push(field);
+      chrome.storage.local.set({ __pagePickedFields: arr }, function() {
+        overlay.classList.add('added');
+        updatePagePickBadge();
+        showToast('✅ 已添加：' + (label || selector), 'success', 1400);
+      });
+    });
+  }
+
+  function updatePagePickBadge() {
+    if (!_pagePickBadge) return;
+    chrome.storage.local.get('__pagePickedFields', function(data) {
+      const count = (data.__pagePickedFields || []).length;
+      _pagePickBadge.textContent = '📋 页面拾取模式 · 已添加 ' + count + ' 个字段  |  按 ESC 退出';
+    });
+  }
+
+  function _onPageKey(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      stopPagePicker();
+    }
+  }
+
   function _onHover(e) {
     if (!_pickerActive || _confirming) return;
     const el = findClickableTarget(e.target);
@@ -366,6 +584,9 @@
     const selector = getSel(el);
     const type     = getElType(el);
     const label    = getLabel(el) || el.name || el.id || '';
+
+    // 自动复制拾取到的 selector 到剪贴板，原有回填逻辑不变
+    copyText(selector);
 
     // 等待 background 确认收到后再结束，避免 pickerEnd 与 pickerHover 竞态导致结果丢失
     let ended = false;
@@ -476,6 +697,20 @@
     // Stop picker mode
     if (msg.action === 'stopPicker') {
       stopPicker();
+      sendResponse({ ok: true });
+      return true;
+    }
+
+    // Start page picker mode (batch highlight all fillable fields)
+    if (msg.action === 'startPagePicker') {
+      startPagePicker();
+      sendResponse({ ok: true });
+      return true;
+    }
+
+    // Stop page picker mode
+    if (msg.action === 'stopPagePicker') {
+      stopPagePicker();
       sendResponse({ ok: true });
       return true;
     }
