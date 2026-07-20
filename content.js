@@ -1,8 +1,8 @@
 /**
- * content.js — 字段填充 · Universal Field Filler v1.4.5
+ * content.js — 字段填充 · Universal Field Filler v1.4.6
  * 洛 - 愿执一生笔，画汝眉上柳...
  *
- * ★ v1.4.5 拾取器方案：
+ * ★ v1.4.6 拾取器方案：
  *   鼠标悬停到表单元素时，通过 chrome.runtime.sendMessage 实时发送元素信息到 background
  *   background 存入 storage，popup 保持打开并轮询 storage，实时更新选择器输入框
  *   不需要关闭 popup，不需要浮层面板
@@ -257,6 +257,35 @@
   let _sendThrottle = null; // throttle sendMessage calls
   let _confirming = false;  // 防止确认过程中重复触发
 
+  // 当用户 hover/click 到 SVG、图标、span 等内层元素时，向上查找到真正可点击的父元素
+  function findClickableTarget(el) {
+    if (!el) return null;
+    const clickableTags = ['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA', 'SUMMARY'];
+    const clickableRoles = ['button', 'link', 'tab', 'menuitem', 'switch', 'checkbox', 'radio'];
+    let cur = el;
+    while (cur && cur !== document.body) {
+      const tag = cur.tagName;
+      if (clickableTags.includes(tag)) return cur;
+      const role = cur.getAttribute('role');
+      if (clickableRoles.includes(role)) return cur;
+      if (cur.hasAttribute('onclick')) return cur;
+      cur = cur.parentElement;
+    }
+    return el;
+  }
+
+  function isInteractive(el) {
+    if (!el) return false;
+    const tag = el.tagName;
+    if (['INPUT','SELECT','TEXTAREA','BUTTON','A','SUMMARY'].includes(tag)) {
+      return !(tag === 'INPUT' && el.type === 'hidden');
+    }
+    const role = el.getAttribute('role');
+    if (['button','link','tab','menuitem','switch','checkbox','radio'].includes(role)) return true;
+    if (el.hasAttribute('onclick')) return true;
+    return false;
+  }
+
   function startPicker() {
     if (_pickerActive) return;
     _pickerActive = true;
@@ -293,14 +322,13 @@
 
   function _onHover(e) {
     if (!_pickerActive || _confirming) return;
-    const el = e.target;
-    // Highlight only form elements
-    // 支持拾取所有可交互元素：输入框、下拉框、文本域、按钮（自动化 click 步骤需要按钮）
-    const isForm = ['INPUT','SELECT','TEXTAREA','BUTTON'].includes(el.tagName) &&
-      !(el.tagName === 'INPUT' && el.type === 'hidden');
+    const el = findClickableTarget(e.target);
+    if (!el || !isInteractive(el)) {
+      if (_lastHl) { _lastHl.classList.remove('__uff-hl'); _lastHl = null; }
+      return;
+    }
 
     if (_lastHl && _lastHl !== el) { _lastHl.classList.remove('__uff-hl'); _lastHl = null; }
-    if (!isForm) return;
 
     el.classList.add('__uff-hl');
     _lastHl = el;
@@ -321,6 +349,8 @@
 
   function _confirmPick(el) {
     if (!el || _confirming) return;
+    el = findClickableTarget(el);
+    if (!el || !isInteractive(el)) return;
     // 立即彻底清理拾取状态，防止任何后续事件继续触发
     _confirming = true;
     _pickerActive = false;
@@ -364,11 +394,8 @@
 
   function _onClick(e) {
     if (!_pickerActive || _confirming) return;
-    const el = e.target;
-    // 支持拾取所有可交互元素：输入框、下拉框、文本域、按钮（自动化 click 步骤需要按钮）
-    const isForm = ['INPUT','SELECT','TEXTAREA','BUTTON'].includes(el.tagName) &&
-      !(el.tagName === 'INPUT' && el.type === 'hidden');
-    if (!isForm) return;
+    const el = findClickableTarget(e.target);
+    if (!el || !isInteractive(el)) return;
 
     // 点击即确认：阻止页面默认交互，并把最终选择发回 popup
     e.preventDefault();
@@ -1173,7 +1200,8 @@
       return;
     }
 
-    var flow = flows[0];
+    // 优先执行标记为默认的流程；若无默认则取第一个
+    var flow = flows.find(function(f) { return f.isDefault; }) || flows[0];
     var enrichedSteps = [];
     var steps = flow.steps || [];
     for (var i = 0; i < steps.length; i++) {

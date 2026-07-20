@@ -10,9 +10,9 @@
 
 <p align="center">
   <a href="https://microsoftedge.microsoft.com/addons/detail/%E5%AD%97%E6%AE%B5%E5%A1%AB%E5%85%85/aekjpmdkkenfoclhkmmjjchnebfaopej?hl=zh-CN">
-    <img src="https://img.shields.io/badge/Edge%20Add--ons-1.4.5-0078D7?style=for-the-badge&logo=microsoftedge&logoColor=white" alt="Edge Add-ons" />
+    <img src="https://img.shields.io/badge/Edge%20Add--ons-1.4.6-0078D7?style=for-the-badge&logo=microsoftedge&logoColor=white" alt="Edge Add-ons" />
   </a>
-  <img src="https://img.shields.io/badge/Chrome%20MV3-1.4.5-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome MV3" />
+  <img src="https://img.shields.io/badge/Chrome%20MV3-1.4.6-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome MV3" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License" />
   <img src="https://img.shields.io/badge/Platform-Chrome%20%7C%20Edge-4ADE80?style=for-the-badge" alt="Platform" />
 </p>
@@ -115,6 +115,15 @@ field-fill/
 ---
 
 ## 📝 更新日志
+
+### v1.4.6 (2026-07-20)
+
+- ✨ **流程步骤支持拖拽排序**：自动化 Tab 中每个步骤左侧新增 `⋮⋮` 手柄，可上下拖动调整执行顺序
+- 🐛 **修复 SVG / 内层元素拾取失败**：元素拾取时自动向上查找 `button / a / summary / [role="button"]` 等可点击父元素
+- 🐛 **修复运行流程提示“流程无步骤”**：popup 与 content.js 的消息字段统一为 `flow.steps`
+- 🐛 **修复运行流程连接错误**：运行前先 `ensureContentScript`，未注入时自动注入 content.js
+- ⭐ **支持设置默认自动化流程**：流程卡片右上角新增默认按钮，右侧 Dock 主键优先执行默认流程
+- 🔖 **统一版本号**：所有文件版本号统一为 `1.4.6`
 
 ### v1.4.5 (2026-07-19)
 

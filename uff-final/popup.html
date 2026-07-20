@@ -719,20 +719,6 @@
       letter-spacing: .05em;
     }
 
-    .dlbl-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 6px;
-    }
-
-    .dlbl-r {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      flex-shrink: 0;
-    }
-
     .dfield textarea.inp {
       resize: vertical;
       min-height: 50px;
@@ -873,31 +859,6 @@
       padding: 0 5px;
     }
 
-    .fshared {
-      width: 90px;
-      flex-shrink: 0;
-      padding: 4px 7px;
-      border: 1px solid var(--b0);
-      border-radius: 4px;
-      background: var(--bg0);
-      color: var(--t0);
-      font-size: 11px;
-      font-family: inherit;
-      transition: all var(--tf);
-    }
-
-    .fshared:hover,
-    .fshared:focus {
-      border-color: var(--p);
-      background: #fff;
-      outline: none;
-    }
-
-    .fshared[data-has-value="true"] {
-      border-color: rgba(16, 185, 129, .5);
-      background: rgba(16, 185, 129, .06);
-    }
-
     .fw-toggle {
       display: flex;
       align-items: center;
@@ -953,42 +914,6 @@
 
     .batch-bar label input {
       accent-color: var(--p);
-    }
-
-
-
-    /* Shared field toggle in preset detail */
-    .dfield-shared {
-      position: relative;
-    }
-    .dfield-shared .dfi-inp {
-      background: rgba(99, 102, 241, .06);
-      border-color: rgba(99, 102, 241, .25);
-      color: var(--p);
-    }
-    .sf-toggle {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 10px;
-      font-weight: 600;
-      color: var(--p);
-      cursor: pointer;
-      user-select: none;
-      padding: 2px 7px;
-      background: rgba(99, 102, 241, .08);
-      border-radius: var(--rf);
-      transition: all var(--tf);
-    }
-    .sf-toggle:hover {
-      background: rgba(99, 102, 241, .14);
-    }
-    .sf-toggle input {
-      accent-color: var(--p);
-      width: 12px;
-      height: 12px;
-      margin: 0;
-      cursor: pointer;
     }
 
     /* Extract results */
@@ -1365,18 +1290,6 @@
       max-width: 95%;
       box-shadow: var(--shlg);
       animation: slideUp .22s ease;
-    }
-    .dlg-wide {
-      width: 420px;
-    }
-    #dlg-inp {
-      min-height: 36px;
-      resize: vertical;
-    }
-    #dlg-inp.multiline {
-      min-height: 220px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      line-height: 1.6;
     }
 
     @keyframes slideUp {
@@ -2406,16 +2319,6 @@
       display:flex; align-items:center; justify-content:center;
       flex-shrink:0; margin-top:2px;
     }
-    .step-drag {
-      width:14px; height:20px;
-      display:flex; align-items:center; justify-content:center;
-      color:var(--t2); font-size:12px; line-height:1;
-      cursor:grab; flex-shrink:0; margin-top:2px;
-      transition: color var(--tf);
-    }
-    .step-drag:hover { color:var(--p); }
-    .step-item.dragging { opacity:.6; border-color:var(--p); background:rgba(99,102,241,.06); }
-    .step-item.drag-over { border-color:var(--p); box-shadow:0 0 0 2px rgba(99,102,241,.15); }
     .step-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:5px; }
     .step-type-sel {
       padding:4px 7px; font-size:11.5px;
@@ -2483,7 +2386,7 @@
     <div class="tab active" data-panel="presets">📋 预设填充</div>
     <div class="tab" data-panel="fields">🔧 字段配置</div>
     <div class="tab" data-panel="parse">🔍 智能解析</div>
-    <div class="tab" data-panel="flows">⚡ 自动化</div>
+    <div class="tab" data-panel="flows">⚡ 自动化流程</div>
     <div class="tab" data-panel="io">📦 导入导出</div>
   </div>
 
@@ -2534,7 +2437,7 @@
               <div class="picker-hint" id="picker-hint">
                 <span
                   style="width:6px;height:6px;background:var(--p);border-radius:50%;display:inline-block;animation:pulse 1s infinite;flex-shrink:0;"></span>
-                拾取中… 悬停预览目标字段，点击即可确认填入 · <a href="#" id="stop-pick-link"
+                拾取中… 将鼠标悬停到目标字段，选择器将自动填入 · <a href="#" id="stop-pick-link"
                   style="color:var(--err);text-decoration:none;font-weight:600;">停止</a>
               </div>
             </div>
@@ -2543,8 +2446,6 @@
                 <option value="text">文本输入框</option>
                 <option value="select">下拉选择框</option>
                 <option value="textarea">多行文本框</option>
-                <option value="time">时间选择框</option>
-                <option value="date">日期选择框</option>
               </select>
               <button class="btn btn-p btn-sm" id="add-field-btn">添加字段</button>
             </div>
@@ -2561,20 +2462,16 @@
         </div>
       </div>
 
-      <!-- 3. 已配置字段 (field list with shared values) -->
+      <!-- 3. 已配置字段 (third) -->
       <div class="sec">
         <div class="sec-hd">
           <span>📝 已配置字段 <span id="field-count" style="color:var(--t2);font-weight:400;font-size:11px;"></span></span>
           <div class="sec-hd-r">
             <span class="profile-badge" id="active-profile-badge" style="display:none;"></span>
-            <button class="btn btn-g btn-sm" id="shared-text-btn">文本视图</button>
             <button class="btn btn-g btn-sm" id="batch-toggle-btn">批量管理</button>
           </div>
         </div>
         <div class="sec-bd">
-          <div style="font-size:11px;color:var(--t2);margin-bottom:8px;line-height:1.5;">
-            每个字段右侧的「统一值」用于跨预设共享该字段的值（如版本号）。在预设中开启「使用共享」后将自动读取此处最新值；空值表示不共享。
-          </div>
           <div class="batch-bar" id="batch-bar">
             <label><input type="checkbox" id="selall-fields"> 全选</label>
             <button class="btn btn-err btn-sm" id="del-selected-btn">🗑️ 删除所选</button>
@@ -2631,7 +2528,7 @@
       <!-- 空态 -->
       <div id="flow-empty" class="empty" style="display:none;">
         <div class="empty-i">⚡</div>
-        <div class="empty-t">暂无自动化</div>
+        <div class="empty-t">暂无自动化流程</div>
         <div class="empty-d">点击「＋ 新建流程」开始配置</div>
       </div>
     </div>
@@ -2659,9 +2556,9 @@
         </div>
       </div>
 
-      <!-- 快捷键 & 右键菜单 & 悬浮球 -->
+      <!-- 快捷键 & 右键菜单 -->
       <div class="io-card">
-        <div class="io-card-hd">⌨️ 快捷键 &amp; 右键菜单 &amp; 悬浮球</div>
+        <div class="io-card-hd">⌨️ 快捷键 &amp; 右键菜单</div>
         <div class="io-card-bd" style="gap:5px;">
           <div class="io-info-row">
             <span>快速填充快捷键</span>
@@ -2677,6 +2574,14 @@
               <div class="io-switch-track"></div>
             </label>
           </div>
+          <button class="btn btn-g btn-block" id="rebuild-menu-btn" style="font-size:11.5px;">🔄 重建右键菜单</button>
+        </div>
+      </div>
+
+      <!-- 悬浮球 -->
+      <div class="io-card">
+        <div class="io-card-hd">🎯 悬浮填充按钮</div>
+        <div class="io-card-bd" style="gap:5px;">
           <div class="io-toggle-row">
             <div>
               <div class="io-toggle-label">启用页面悬浮球</div>
@@ -2687,7 +2592,6 @@
               <div class="io-switch-track"></div>
             </label>
           </div>
-          <button class="btn btn-g btn-block" id="rebuild-menu-btn" style="font-size:11.5px;">🔄 重建右键菜单</button>
         </div>
       </div>
 
@@ -2767,9 +2671,9 @@
 
   <!-- Dialog -->
   <div class="dlg-ov" id="dlg-ov">
-    <div class="dlg" id="dlg-box">
+    <div class="dlg">
       <div class="dlg-title" id="dlg-title">输入</div>
-      <textarea class="inp" id="dlg-inp" placeholder=""></textarea>
+      <input class="inp" id="dlg-inp" placeholder="">
       <div class="dlg-hint" id="dlg-hint"></div>
       <div class="dlg-btns">
         <button class="btn btn-g" id="dlg-cancel">取消</button>
