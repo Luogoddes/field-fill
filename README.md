@@ -15,6 +15,9 @@
   <img src="https://img.shields.io/badge/Chrome%20MV3-1.4.8-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome MV3" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License" />
   <img src="https://img.shields.io/badge/Platform-Chrome%20%7C%20Edge-4ADE80?style=for-the-badge" alt="Platform" />
+  <a href="https://github.com/Luogoddes/field-fill/wiki">
+    <img src="https://img.shields.io/badge/Wiki-使用文档-6366f1?style=for-the-badge&logo=github&logoColor=white" alt="Wiki" />
+  </a>
 </p>
 
 <p align="center">
@@ -22,7 +25,8 @@
   <a href="#-安装方法">安装方法</a> •
   <a href="#-使用指南">使用指南</a> •
   <a href="#-项目结构">项目结构</a> •
-  <a href="#-更新日志">更新日志</a>
+  <a href="#-更新日志">更新日志</a> •
+  <a href="https://github.com/Luogoddes/field-fill/wiki">📖 Wiki 使用文档</a>
 </p>
 
 ---
