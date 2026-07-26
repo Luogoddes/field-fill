@@ -1443,6 +1443,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('about-close').addEventListener('click', () => document.getElementById('about-ov').classList.remove('show'));
   document.getElementById('about-ov').addEventListener('click', e=>{ if(e.target===e.currentTarget) e.currentTarget.classList.remove('show'); });
   document.getElementById('github-link').addEventListener('click', e=>{ e.preventDefault(); chrome.tabs.create({url:'https://github.com/Luogoddes/field-fill'}); });
+  document.getElementById('wiki-link').addEventListener('click', e=>{ e.preventDefault(); chrome.tabs.create({url:'https://github.com/Luogoddes/field-fill/wiki'}); });
   document.getElementById('issues-link').addEventListener('click', e=>{ e.preventDefault(); chrome.tabs.create({url:'https://github.com/Luogoddes/field-fill/issues'}); });
 
   // Tabs
