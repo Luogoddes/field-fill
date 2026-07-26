@@ -12,6 +12,7 @@ on:
       - 'popup.html'
       - 'popup.js'
       - 'icons/**'
+  workflow_dispatch:
 
 permissions:
   contents: write
