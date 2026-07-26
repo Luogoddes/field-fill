@@ -1,9 +1,9 @@
 /**
  * background.js — Service Worker
- * 字段填充 · Universal Field Filler v1.4.7
+ * 字段填充 · Universal Field Filler v1.4.8
  * 洛 - 愿执一生笔，画汝眉上柳...
  *
- * ★ v1.4.7 修复：
+ * ★ v1.4.8 修复：
  *   - 右键菜单 title 不能含 emoji，改为纯文字（emoji 导致创建失败）
  *   - 右键菜单在 onInstalled + onStartup 双重注册确保生效
  *   - 新增 pickerHover 消息：content.js 实时发回悬停元素信息，存入 storage 供 popup 轮询
@@ -11,9 +11,9 @@
 'use strict';
 
 // ══════════════════════════════════════════════
-//  Default Profile
+//  Default Profile (已注释掉，不再默认创建 Redmine 示例配置)
 // ══════════════════════════════════════════════
-const DEFAULT_PROFILE = {
+/* const DEFAULT_PROFILE = {
   id: 'profile-default', name: 'Redmine', isActive: true, tags: ['redmine'],
   fields: [
     { id:'field-soc',      name:'SoC 版本',    selector:'#issue_custom_field_values_1102', type:'text',   fullWidth:0 },
@@ -28,7 +28,7 @@ const DEFAULT_PROFILE = {
   ],
   sharedValues: {},
   presets: []
-};
+}; */
 
 // ══════════════════════════════════════════════
 //  Shared Field Resolution
@@ -119,11 +119,11 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   await setupContextMenu();
   if (reason === 'install') {
-    await chrome.storage.local.set({ profiles: [DEFAULT_PROFILE], theme: 'auto', contextMenuEnabled: true });
-    console.log('[UFF] v1.4.7 installed');
+    await chrome.storage.local.set({ profiles: [], theme: 'auto', contextMenuEnabled: true });
+    console.log('[UFF] v1.4.8 installed');
   } else if (reason === 'update') {
     await migrateData();
-    console.log('[UFF] v1.4.7 updated');
+    console.log('[UFF] v1.4.8 updated');
   }
 });
 
@@ -138,7 +138,7 @@ async function migrateData() {
   const data = await chrome.storage.local.get(['profiles', 'fieldConfig', 'presets', 'currentConfig']);
   // 仅当 profiles 键完全不存在时才迁移；空数组视为已初始化的合法状态
   if (Array.isArray(data.profiles)) return;
-  const profile = JSON.parse(JSON.stringify(DEFAULT_PROFILE));
+  const profile = { id: 'profile-migrated', name: '默认', isActive: true, tags: [], fields: [], sharedValues: {}, presets: [] };
   if (data.fieldConfig?.length) {
     profile.fields = data.fieldConfig.map(f => ({
       id: f.id || 'f-' + Math.random().toString(36).slice(2),

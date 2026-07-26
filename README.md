@@ -10,9 +10,9 @@
 
 <p align="center">
   <a href="https://microsoftedge.microsoft.com/addons/detail/%E5%AD%97%E6%AE%B5%E5%A1%AB%E5%85%85/aekjpmdkkenfoclhkmmjjchnebfaopej?hl=zh-CN">
-    <img src="https://img.shields.io/badge/Edge%20Add--ons-1.4.7-0078D7?style=for-the-badge&logo=microsoftedge&logoColor=white" alt="Edge Add-ons" />
+    <img src="https://img.shields.io/badge/Edge%20Add--ons-1.4.8-0078D7?style=for-the-badge&logo=microsoftedge&logoColor=white" alt="Edge Add-ons" />
   </a>
-  <img src="https://img.shields.io/badge/Chrome%20MV3-1.4.7-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome MV3" />
+  <img src="https://img.shields.io/badge/Chrome%20MV3-1.4.8-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome MV3" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License" />
   <img src="https://img.shields.io/badge/Platform-Chrome%20%7C%20Edge-4ADE80?style=for-the-badge" alt="Platform" />
 </p>
@@ -115,6 +115,12 @@ field-fill/
 ---
 
 ## 📝 更新日志
+
+### v1.4.8 (2026-07-26)
+
+- 🐛 **修复预设详情显示所有字段的 bug**：新建预设选择部分字段后，打开详情仅显示已选字段，其余字段归入可展开的「可选字段」区域
+- 🧩 **支持在预设详情中增删字段**：已选字段可一键移除，可选字段可点击添加，避免反复重建预设
+- 🔖 **统一版本号**：所有文件版本号统一为 `1.4.8`
 
 ### v1.4.7 (2026-07-20)
 

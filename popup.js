@@ -1,8 +1,8 @@
 /**
- * popup.js — 字段填充 · Universal Field Filler v1.4.7
+ * popup.js — 字段填充 · Universal Field Filler v1.4.8
  * 洛 - 愿执一生笔，画汝眉上柳...
  *
- * ★ v1.4.7 修复：
+ * ★ v1.4.8 修复：
  *   1. 预设填充显示所有 Profile 的预设（不再只显示 activeProfile）
  *   2. 详情「复制」→「文本预览」按钮，展示 "字段名：值" 格式文本
  *   3. 拾取器：popup 保持打开，通过 storage 轮询实时更新选择器输入框
@@ -20,6 +20,8 @@ let currentPanel    = 'presets';
 let currentParsed   = null;
 let batchMode       = false;
 let ctxChipId       = null;
+let ctxPresetId     = null;
+let ctxPresetProfileId = null;
 
 // Picker state
 let pickerActive    = false;
@@ -283,6 +285,34 @@ async function fillWithPreset(profile, presetId) {
 }
 
 // ════════════════════════════════════════════
+//  Preset context menu (right-click on preset card)
+// ════════════════════════════════════════════
+function showPresetContextMenu(e, pid, profileId) {
+  ctxPresetId = pid;
+  ctxPresetProfileId = profileId;
+  const menu = document.getElementById('preset-ctx-menu');
+  const defItem = menu.querySelector('[data-act="def"]');
+
+  const profile = profiles.find(p => p.id === profileId);
+  const preset = profile?.presets.find(p => p.id === pid);
+  const isDef = preset?.isDefault || false;
+  defItem.textContent = isDef ? '⭐ 取消默认填充' : '⭐ 设为默认填充';
+
+  // Position within viewport
+  const x = Math.min(e.clientX, window.innerWidth - 160);
+  const y = Math.min(e.clientY, window.innerHeight - 80);
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  menu.classList.add('show');
+}
+
+function hidePresetContextMenu() {
+  document.getElementById('preset-ctx-menu')?.classList.remove('show');
+  ctxPresetId = null;
+  ctxPresetProfileId = null;
+}
+
+// ════════════════════════════════════════════
 //  Presets Panel — show ALL profiles' presets
 //  Global single default: only one preset across all profiles can be "default"
 // ════════════════════════════════════════════
@@ -420,8 +450,8 @@ function renderPresets() {
         const profile = profiles.find(p => p.id === profileId);
         const preset  = profile?.presets.find(p => p.id === pid);
         if (preset && profile) {
-          const _bDH = window.buildDetailHTML || buildDetailHTML;
-          const _bDE = window.bindDetailEvents || bindDetailEvents;
+          const _bDH = window.buildDetailHTML;
+          const _bDE = window.bindDetailEvents;
           panel.innerHTML = _bDH(preset, profile);
           panel.classList.add('open');
           btn.textContent = '▲';
@@ -434,167 +464,41 @@ function renderPresets() {
       }
     });
   });
+
+  // Click on card header → expand detail (like clicking the toggle button)
+  container.querySelectorAll('.pcard-hd').forEach(hd => {
+    hd.addEventListener('click', e => {
+      if (e.target.closest('.pact')) return; // buttons handle themselves
+      const card = hd.closest('.pcard');
+      const btn = card?.querySelector('.pact.toggle');
+      if (btn) btn.click();
+    });
+  });
+
+  // Right-click on preset card → context menu
+  container.querySelectorAll('.pcard').forEach(card => {
+    card.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      const pid = card.dataset.pid;
+      const profileId = card.dataset.profileid;
+      if (!pid || !profileId) return;
+      showPresetContextMenu(e, pid, profileId);
+    });
+  });
 }
 
 // ════════════════════════════════════════════
 //  Preset Detail
 // ════════════════════════════════════════════
-function buildDetailHTML(preset, profile) {
-  const fields = profile.fields || [];
-
-  // Text preview string
-  const previewText = fields
-    .filter(f => preset.data?.[f.id])
-    .map(f => `${f.name}：${preset.data[f.id]}`)
-    .join('\n') || '（暂无数据）';
-
-  // Edit grid
-  const gridHTML = fields.map(f => {
-    const val    = preset.data?.[f.id] || '';
-    const isFull = f.fullWidth === 1 || f.type === 'textarea' || val.length > 60;
-    const inp = isFull
-      ? `<textarea class="inp dfi" data-fid="${f.id}" rows="2">${esc(val)}</textarea>`
-      : `<input class="inp dfi" type="text" data-fid="${f.id}" value="${esc(val)}">`;
-    return `<div class="dfield ${isFull ? 'full' : ''}"><div class="dlbl">${esc(f.name)}</div>${inp}</div>`;
-  }).join('');
-
-  return `
-    <div class="detail-meta">
-      <input class="inp" id="dn-${preset.id}" value="${esc(preset.name)}" placeholder="预设名称" style="flex:2;">
-      <input class="inp" id="dt-${preset.id}" value="${esc((preset.tags||[]).join(', '))}" placeholder="标签（逗号分隔）" style="flex:3;">
-    </div>
-
-    <!-- View mode toggle -->
-    <div style="display:flex;gap:5px;margin-bottom:8px;">
-      <button class="btn btn-g btn-sm view-mode-btn active-mode" data-mode="edit" style="flex:1;justify-content:center;">✏️ 编辑</button>
-      <button class="btn btn-g btn-sm view-mode-btn" data-mode="text" style="flex:1;justify-content:center;">📄 文本</button>
-    </div>
-
-    <!-- Edit view -->
-    <div class="detail-view" data-view="edit">
-      <div class="detail-grid">
-        ${gridHTML || '<div style="color:var(--t2);font-size:12px;grid-column:1/-1;">此 Profile 暂无字段，请先在「字段配置」中添加。</div>'}
-      </div>
-    </div>
-
-    <!-- Text view — editable textarea, format: 字段名：值 -->
-    <div class="detail-view" data-view="text" style="display:none;">
-      <textarea class="preset-text-preview-edit inp" id="ptxt-${preset.id}"
-        rows="6" spellcheck="false">${esc(previewText)}</textarea>
-      <div style="font-size:10px;color:var(--t2);margin-top:4px;">
-        格式：每行 <code>字段名：值</code>，保存时按此格式解析并覆盖对应字段
-      </div>
-    </div>
-
-    <div class="detail-acts">
-      <button class="btn btn-ok btn-sm dact" data-act="use">✨ 填充</button>
-      <button class="btn btn-p btn-sm dact"  data-act="save">💾 保存</button>
-      <button class="btn btn-g btn-sm dact"  data-act="def">⭐ 默认</button>
-      <button class="btn btn-g btn-sm dact"  data-act="copy" title="复制文本信息">📋 复制</button>
-      <button class="btn btn-err btn-sm dact" data-act="del">🗑️ 删除</button>
-    </div>`;
+// 重新渲染 preset detail；调用前请先把当前输入框的值收集到 preset.data
+function _rerenderDetail(panel, preset, profile) {
+  panel.innerHTML = window.buildDetailHTML(preset, profile);
+  window.bindDetailEvents(panel, preset, profile);
 }
 
-function bindDetailEvents(panel, preset, profile) {
-  // View mode toggle
-  panel.querySelectorAll('.view-mode-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const mode = btn.dataset.mode;
-      panel.querySelectorAll('.view-mode-btn').forEach(b => {
-        b.classList.toggle('active-mode', b === btn);
-        b.style.fontWeight = b === btn ? '700' : '';
-      });
-      panel.querySelectorAll('.detail-view').forEach(v => {
-        v.style.display = v.dataset.view === mode ? '' : 'none';
-      });
-      // Sync text textarea with current edit inputs
-      if (mode === 'text') {
-        const lines = [];
-        (profile.fields || []).forEach(f => {
-          const inp = panel.querySelector(`.dfi[data-fid="${f.id}"]`);
-          const v   = inp ? inp.value : (preset.data?.[f.id] || '');
-          lines.push(`${f.name}：${v}`);  // include all fields, even empty
-        });
-        const ta = document.getElementById(`ptxt-${preset.id}`);
-        if (ta) ta.value = lines.join('\n') || '（暂无数据）';
-      }
-      // Sync edit inputs from text textarea when switching back
-      if (mode === 'edit') {
-        const ta = document.getElementById(`ptxt-${preset.id}`);
-        if (ta) _parseTextIntoInputs(ta.value, panel, profile);
-      }
-    });
-  });
-
-  // Track changes → pulse save button
-  panel.querySelectorAll('.dfi').forEach(inp => {
-    inp.addEventListener('input', () => {
-      panel.querySelector('[data-act="save"]')?.classList.add('has-changes');
-    });
-  });
-  const txtArea = document.getElementById(`ptxt-${preset.id}`);
-  if (txtArea) {
-    txtArea.addEventListener('input', () => {
-      panel.querySelector('[data-act="save"]')?.classList.add('has-changes');
-    });
-  }
-
-  // Fill: use live DOM values (from whichever view is active)
-  panel.querySelector('[data-act="use"]')?.addEventListener('click', e => {
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-    const data = _collectData(panel, profile);
-    fillWithData(profile, data);
-  });
-
-  // Save: collect from both views
-  panel.querySelector('[data-act="save"]')?.addEventListener('click', async () => {
-    const name = document.getElementById(`dn-${preset.id}`)?.value.trim();
-    const tags  = document.getElementById(`dt-${preset.id}`)?.value.split(',').map(t=>t.trim()).filter(Boolean);
-    const data  = _collectData(panel, profile);
-    const p = profile.presets.find(x => x.id === preset.id);
-    if (p) { p.name = name || p.name; p.tags = tags; p.data = data; }
-    await saveProfiles();
-    panel.querySelector('[data-act="save"]')?.classList.remove('has-changes');
-    renderPresets();
-    showToast('💾 预设已保存', 'success');
-  });
-
-  // Set global default (clear all others first)
-  panel.querySelector('[data-act="def"]')?.addEventListener('click', async () => {
-    setGlobalDefault(profile.id, preset.id);
-    await saveProfiles(); renderPresets();
-    showToast('⭐ 已设为全局默认（快捷键和右键菜单将使用此预设）', 'success');
-  });
-
-  // Export
-  panel.querySelector('[data-act="exp"]')?.addEventListener('click', () => {
-    downloadJSON({ _type:'uff-preset', profileId:profile.id, profileName:profile.name, preset:{...preset} }, `preset-${preset.name}.json`);
-    showToast('📤 预设已导出', 'info');
-  });
-
-  // Delete
-  panel.querySelector('[data-act="del"]')?.addEventListener('click', async () => {
-    if (!confirm(`确定删除预设「${preset.name}」？`)) return;
-    profile.presets = profile.presets.filter(p => p.id !== preset.id);
-    await saveProfiles(); renderPresets();
-    showToast('🗑️ 已删除', 'info');
-  });
-}
-
-// Collect field data from whichever view is active
-function _collectData(panel, profile) {
-  // Check if text view is visible
-  const textView = panel.querySelector('.detail-view[data-view="text"]');
-  if (textView && textView.style.display !== 'none') {
-    const ta = textView.querySelector('textarea');
-    if (ta) return _parseTextToData(ta.value, profile);
-  }
-  // Fallback: edit view inputs
-  const data = {};
-  panel.querySelectorAll('.dfi[data-fid]').forEach(inp => { data[inp.dataset.fid] = inp.value; });
-  return data;
-}
+// ════════════════════════════════════════════
+//  Parse / Collect helpers (also used by detail)
+// ════════════════════════════════════════════
 
 // Parse "字段名：值" text into {fieldId: value}
 function _parseTextToData(text, profile) {
@@ -666,21 +570,128 @@ function _parseTextIntoInputs(text, panel, profile) {
   });
 }
 
+// 新建预设时选择要包含的字段（点击行选中/取消，可搜索、全选/取消全选）
+function openPresetFieldPicker(profile) {
+  return new Promise(resolve => {
+    const ov = document.getElementById('preset-picker-ov');
+    const list = document.getElementById('ppicker-list');
+    const search = document.getElementById('ppicker-search');
+    const toggleBtn = document.getElementById('ppicker-toggle-all');
+    const cancel = document.getElementById('ppicker-cancel');
+    const confirm = document.getElementById('ppicker-confirm');
+    const fields = (profile.fields || []).slice();
+
+    if (!fields.length) {
+      showToast('当前 Profile 没有字段，无法选择', 'warning');
+      return resolve([]);
+    }
+
+    // 默认全部不选中
+    const checkedSet = new Set();
+    let visibleFields = fields.slice();
+
+    function syncToggleLabel() {
+      const anyVisible = visibleFields.length > 0;
+      const visibleChecked = anyVisible && visibleFields.every(f => checkedSet.has(f.id));
+      toggleBtn.textContent = visibleChecked ? '取消全选' : '全选';
+    }
+
+    function isSelected(f) {
+      return checkedSet.has(f.id);
+    }
+
+    function render(items) {
+      visibleFields = items;
+      if (!items.length) {
+        list.innerHTML = '<div class="ppicker-empty">无匹配字段</div>';
+        syncToggleLabel();
+        return;
+      }
+      list.innerHTML = items.map(f => {
+        const selected = isSelected(f);
+        return `
+        <div class="ppicker-item ${selected ? 'selected' : ''}" data-fid="${f.id}">
+          <div class="ppicker-check">${selected ? '✓' : ''}</div>
+          <span class="ftype ${f.type}">${f.type === 'textarea' ? 'ta' : f.type}</span>
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.name)}</span>
+          <small style="color:var(--t2);font-size:10px;max-width:110px;overflow:hidden;text-overflow:ellipsis;">${esc(f.selector)}</small>
+        </div>
+      `;
+      }).join('');
+      syncToggleLabel();
+    }
+
+    function setSelected(f, selected) {
+      if (selected) checkedSet.add(f.id);
+      else checkedSet.delete(f.id);
+      const row = list.querySelector(`.ppicker-item[data-fid="${f.id}"]`);
+      if (row) {
+        row.classList.toggle('selected', selected);
+        row.querySelector('.ppicker-check').textContent = selected ? '✓' : '';
+      }
+      syncToggleLabel();
+    }
+
+    function cleanup() {
+      ov.classList.remove('show');
+      search.value = '';
+      search.oninput = null;
+      toggleBtn.onclick = null;
+      cancel.onclick = null;
+      confirm.onclick = null;
+      list.onclick = null;
+    }
+
+    render(fields);
+    setTimeout(() => search.focus(), 30);
+
+    search.oninput = () => {
+      const q = search.value.trim().toLowerCase();
+      render(fields.filter(f =>
+        f.name.toLowerCase().includes(q) ||
+        f.selector.toLowerCase().includes(q)
+      ));
+    };
+
+    list.onclick = e => {
+      const row = e.target.closest('.ppicker-item');
+      if (!row) return;
+      const fid = row.dataset.fid;
+      const f = fields.find(x => x.id === fid);
+      if (!f) return;
+      setSelected(f, !checkedSet.has(fid));
+    };
+
+    toggleBtn.onclick = () => {
+      const wantChecked = !visibleFields.every(f => checkedSet.has(f.id));
+      visibleFields.forEach(f => setSelected(f, wantChecked));
+    };
+
+    cancel.onclick = () => { cleanup(); resolve(null); };
+    confirm.onclick = () => {
+      cleanup();
+      resolve([...checkedSet]);
+    };
+
+    ov.classList.add('show');
+  });
+}
+
 async function addPreset() {
-  // Ask which profile if multiple
   let targetProfile = getActiveProfile();
-  if (profiles.length > 1) {
-    const options = profiles.map((p, i) => `${i+1}. ${p.name}`).join('\n');
-    // Use dialog to pick, just use active for now (simpler UX)
-    // The profile tag on preset makes it clear which profile it belongs to
-  }
   if (!targetProfile) { showToast('请先创建 Profile', 'error'); return; }
-  const name = await openDialog({ title:'新建预设', placeholder:'如：800D R#2 版本配置', hint:`将添加到 Profile：${targetProfile.name}` });
+  const name = await openDialog({ title:'新建预设', placeholder:'如：LUO R#2 版本配置', hint:`将添加到 Profile：${targetProfile.name}` });
   if (!name?.trim()) return;
-  const np = { id:'preset-'+uid(), name:name.trim(), data:{}, tags:[], isDefault:targetProfile.presets.length===0, createdAt:Date.now() };
+
+  const selectedIds = await openPresetFieldPicker(targetProfile);
+  if (selectedIds === null) return; // 用户取消字段选择
+
+  const data = {};
+  selectedIds.forEach(fid => data[fid] = '');
+  const np = { id:'preset-'+uid(), name:name.trim(), data, tags:[], isDefault:targetProfile.presets.length===0, createdAt:Date.now() };
   targetProfile.presets.push(np);
   await saveProfiles(); renderPresets();
-  showToast(`✅ 预设「${np.name}」已添加到 ${targetProfile.name}`, 'success');
+  showToast(`✅ 预设「${np.name}」已创建（含 ${selectedIds.length} 个字段）`, 'success');
 }
 
 // ════════════════════════════════════════════
@@ -900,7 +911,7 @@ async function renderCandidates() {
       <span class="ftype ${c.type || 'text'}">${(c.type || 'text') === 'textarea' ? 'ta' : (c.type || 'text')}</span>
       <div class="finfo" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;">
         <input class="cname-e inp" value="${esc(c.name || c.label || '')}" data-cid="${esc(c.candidateId)}" placeholder="字段名称" style="font-weight:600;">
-        <input class="csel-e inp" value="${esc(c.selector)}" data-cid="${esc(c.candidateId)}" placeholder="CSS 选择器" style="color:var(--t1);font-size:11px;padding:4px 6px;">
+        <input class="csel-e inp" value="${esc(c.selector)}" data-cid="${esc(c.candidateId)}" placeholder="CSS 或 xpath:..." style="color:var(--t1);font-size:11px;padding:4px 6px;">
       </div>
       <select class="ctype-e inp" data-cid="${esc(c.candidateId)}" style="width:70px;flex-shrink:0;">${typeOptions(c.type || 'text')}</select>
       <button class="bico d" data-cid="${esc(c.candidateId)}" title="删除">✕</button>
@@ -1077,7 +1088,7 @@ async function addFieldManually() {
   const sel  = document.getElementById('new-fsel').value.trim();
   const type = document.getElementById('new-ftype').value;
   if (!name) { showToast('请输入字段名称', 'error'); return; }
-  if (!sel)  { showToast('请输入 CSS 选择器', 'error'); return; }
+  if (!sel)  { showToast('请输入 CSS / XPath 选择器', 'error'); return; }
   if (!Array.isArray(profile.fields)) profile.fields = [];
   if (profile.fields.find(f => f.selector === sel)) { showToast('该选择器已存在', 'error'); return; }
   profile.fields.push({ id:'field-'+uid(), name, selector:sel, type, fullWidth:0 });
@@ -1158,7 +1169,7 @@ function stopPicker() {
 
     selEl.classList.remove('picker-active');
     selEl.style.borderColor = '';
-    selEl.placeholder = 'CSS 选择器（如：#issue_subject）';
+    selEl.placeholder = 'CSS 或 XPath（如：#issue_subject 或 xpath://input[@name="q"])';
     hint.classList.remove('show');
     pickBtn.textContent = '🎯 拾取';
     pickBtn.classList.remove('btn-err');
@@ -1341,7 +1352,7 @@ function applyParseResult(profile, data) {
 
 async function saveParseAsPreset() {
   if (!currentParsed) { showToast('请先解析文本', 'error'); return; }
-  const name = await openDialog({ title:'保存为预设', placeholder:'如：800D R#2 测试配置', hint:`保存到 Profile：${currentParsed.profile.name}` });
+  const name = await openDialog({ title:'保存为预设', placeholder:'如：LUO R#2 测试配置', hint:`保存到 Profile：${currentParsed.profile.name}` });
   if (!name?.trim()) return;
   const profile = profiles.find(p=>p.id===currentParsed.profile.id); if (!profile) return;
   const existing = profile.presets.find(p=>p.name===name.trim());
@@ -1363,10 +1374,10 @@ function downloadJSON(data, filename) {
   const a = Object.assign(document.createElement('a'), {href:url, download:filename});
   document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 }
-const exportAll = () => { downloadJSON({_type:'uff-backup',version:'1.4.7',profiles,exportedAt:Date.now()}, 'uff-backup.json'); showToast('📤 备份已导出','success'); };
+const exportAll = () => { downloadJSON({_type:'uff-backup',version:'1.4.8',profiles,exportedAt:Date.now()}, 'uff-backup.json'); showToast('📤 备份已导出','success'); };
 const exportProfile = () => {
   const p=getActiveProfile(); if(!p){showToast('请先选择 Profile','error');return;}
-  downloadJSON({_type:'uff-profile',version:'1.4.7',profile:p},`profile-${p.name}.json`); showToast('📋 已导出','success');
+  downloadJSON({_type:'uff-profile',version:'1.4.8',profile:p},`profile-${p.name}.json`); showToast('📋 已导出','success');
 };
 async function importFile() {
   return new Promise(resolve=>{
@@ -1454,6 +1465,36 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('ctx-rename').addEventListener('click',   async()=>{ const id=ctxChipId; hideCtx(); if(id) await renameProfile(id); });
   document.getElementById('ctx-delete').addEventListener('click',   async()=>{ const id=ctxChipId; hideCtx(); if(id) await deleteProfile(id); });
   document.addEventListener('click', e=>{ if(!e.target.closest('#ctx-menu')) hideCtx(); });
+
+  // Context menu (presets)
+  document.querySelector('#preset-ctx-menu [data-act="def"]').addEventListener('click', async () => {
+    if (!ctxPresetId || !ctxPresetProfileId) return;
+    const profile = profiles.find(p => p.id === ctxPresetProfileId);
+    const preset = profile?.presets.find(p => p.id === ctxPresetId);
+    if (!preset) { hidePresetContextMenu(); return; }
+    if (preset.isDefault) {
+      preset.isDefault = false;
+      await saveProfiles(); renderPresets();
+      showToast('已取消默认填充', 'info');
+    } else {
+      setGlobalDefault(ctxPresetProfileId, ctxPresetId);
+      await saveProfiles(); renderPresets();
+      showToast('⭐ 已设为默认填充（快捷键/右键菜单将使用此预设）', 'success');
+    }
+    hidePresetContextMenu();
+  });
+  document.querySelector('#preset-ctx-menu [data-act="del"]').addEventListener('click', async () => {
+    if (!ctxPresetId || !ctxPresetProfileId) return;
+    const profile = profiles.find(p => p.id === ctxPresetProfileId);
+    const preset = profile?.presets.find(p => p.id === ctxPresetId);
+    if (!preset) { hidePresetContextMenu(); return; }
+    if (!confirm(`确定删除预设「${preset.name}」吗？`)) { hidePresetContextMenu(); return; }
+    profile.presets = profile.presets.filter(p => p.id !== ctxPresetId);
+    await saveProfiles(); renderPresets();
+    showToast('🗑️ 预设已删除', 'success');
+    hidePresetContextMenu();
+  });
+  document.addEventListener('click', e => { if (!e.target.closest('#preset-ctx-menu')) hidePresetContextMenu(); });
 
   // Presets
   document.getElementById('add-preset-btn').addEventListener('click', addPreset);
@@ -1883,13 +1924,20 @@ function bindAutoFillEvents(panel, preset) {
 }
 
 // ── buildDetailHTML (final override) ─────────────
+// 核心修复：严格按照 preset.data 中已有的字段 ID 渲染「已选字段」，
+// 其余 Profile 字段放入可展开的「可选字段」区域，避免打开预设后显示全部字段。
 window.buildDetailHTML = function(preset, profile) {
   const fields = profile.fields || [];
   const sharedValues = profile.sharedValues || {};
+  const data = preset.data || {};
 
-  // grid: respect fullWidth and textarea
-  const gridHTML = fields.map(f => {
-    const rawVal   = preset.data?.[f.id] ?? '';
+  // 按 preset.data 拆分已选 / 可选字段
+  const selectedFields = fields.filter(f => data.hasOwnProperty(f.id));
+  const availableFields = fields.filter(f => !data.hasOwnProperty(f.id));
+
+  // grid: 仅渲染已选字段，并支持移除按钮
+  const gridHTML = selectedFields.map(f => {
+    const rawVal   = data[f.id] ?? '';
     const sharedId = getSharedRef(rawVal);
     const isShared = !!sharedId;
     const val      = isShared ? (sharedValues[f.id] ?? '') : rawVal;
@@ -1932,12 +1980,24 @@ window.buildDetailHTML = function(preset, profile) {
           <input class="dfi dfi-inp ${isShared?'dfi-shared':''}" type="text" data-fid="${f.id}" data-orig="${esc(origVal)}" value="${esc(val)}" style="flex:1;" ${isShared?'readonly':''}>
           ${dynCtrl}
          </div>`;
-    return `<div class="dfield ${isFull?'full':''} ${isShared?'dfield-shared':''}">${labelRow}${inp}</div>`;
+    return `
+      <div class="dfield ${isFull?'full':''} ${isShared?'dfield-shared':''}" data-fid="${f.id}">
+        <button class="bico d remove-field" data-fid="${f.id}" title="从预设中移除">✕</button>
+        ${labelRow}${inp}
+      </div>`;
   }).join('');
 
-  // text view: name：value per field, multiline values preserved (raw refs shown)
-  const previewText = fields.map(f => {
-    const val = preset.data?.[f.id] ?? '';
+  // 可选字段区域（可点击添加）
+  const availableHTML = availableFields.map(f => `
+    <div class="dfield available" data-fid="${f.id}" title="点击添加到预设">
+      <div class="dlbl">${esc(f.name)}</div>
+      <span class="dtype">${f.type}</span>
+    </div>
+  `).join('');
+
+  // text view: 仅显示已选字段
+  const previewText = selectedFields.map(f => {
+    const val = data[f.id] ?? '';
     return `${f.name}：${val}`;
   }).join('\n');
 
@@ -1959,9 +2019,26 @@ window.buildDetailHTML = function(preset, profile) {
     </div>
 
     <div class="dtab-panel active" data-dtabp="edit">
-      <div class="detail-grid">
-        ${gridHTML || '<div style="color:var(--t2);font-size:12px;grid-column:1/-1;text-align:center;padding:14px;">此 Profile 暂无字段，请先在「字段配置」添加。</div>'}
+      <div class="detail-fields-header">
+        <span>已选字段</span>
       </div>
+      <div class="detail-grid" id="selected-fields-${preset.id}">
+        ${gridHTML || '<div style="color:var(--t2);font-size:12px;grid-column:1/-1;text-align:center;padding:14px;">点击「可选字段」中的项添加到此预设</div>'}
+      </div>
+
+      ${availableFields.length ? `
+      <div style="margin-top:10px;">
+        <button class="btn btn-g btn-sm show-available-btn" data-pid="${preset.id}" style="width:100%;justify-content:center;">＋ 添加字段（${availableFields.length}）</button>
+        <div class="available-wrap" id="available-wrap-${preset.id}" style="display:none;">
+          <div class="detail-fields-header" style="margin-top:12px;">
+            <span>可选字段（点击添加）</span>
+          </div>
+          <div class="detail-grid available-fields" id="available-fields-${preset.id}">
+            ${availableHTML}
+          </div>
+        </div>
+      </div>
+      ` : ''}
     </div>
 
     <div class="dtab-panel" data-dtabp="text">
@@ -1996,17 +2073,17 @@ window.bindDetailEvents = function(panel, preset, profile) {
         const ta = panel.querySelector(`#ptxt-${preset.id}`);
         if (ta) _parseTextIntoInputs(ta.value, panel, profile);
       }
-      // Entering text → sync from edit
+      // Entering text → sync from edit (仅同步当前已选字段)
       if (target === 'text') {
         const ta = panel.querySelector(`#ptxt-${preset.id}`);
         if (ta) {
-          // Collect current values from edit inputs (preserve multiline)
-          const lines = (profile.fields||[]).map(f => {
-            const inp = panel.querySelector(`.dfi[data-fid="${f.id}"]`);
-            const val = inp ? inp.value : (preset.data?.[f.id] ?? '');
+          const currentData = _collectDetailData(panel, profile);
+          const selectedFields = (profile.fields || []).filter(f => currentData.hasOwnProperty(f.id));
+          const lines = selectedFields.map(f => {
+            const val = currentData[f.id] ?? '';
             return `${f.name}：${val}`;
           });
-          ta.value = lines.join('\n');
+          ta.value = lines.join('\n') || '（暂无数据）';
         }
       }
 
@@ -2077,6 +2154,45 @@ window.bindDetailEvents = function(panel, preset, profile) {
     });
   });
 
+  // 展开/收起「可选字段」列表
+  panel.querySelectorAll('.show-available-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const wrap = panel.querySelector('.available-wrap');
+      if (!wrap) return;
+      const isHidden = wrap.style.display === 'none';
+      wrap.style.display = isHidden ? '' : 'none';
+      btn.textContent = isHidden ? '▲ 收起字段列表' : `＋ 添加字段（${(profile.fields || []).filter(f => !preset.data.hasOwnProperty(f.id)).length}）`;
+    });
+  });
+
+  // 从可选字段中添加字段到当前预设
+  panel.querySelectorAll('.available-fields .dfield.available').forEach(item => {
+    item.addEventListener('click', () => {
+      const fid = item.dataset.fid;
+      if (!preset.data) preset.data = {};
+      // 保留当前输入框中的值，避免重新渲染时丢失已填写内容
+      const currentData = _collectDetailData(panel, profile);
+      Object.assign(preset.data, currentData);
+      preset.data[fid] = '';
+      _rerenderDetail(panel, preset, profile);
+      panel.querySelector('[data-act="save"]')?.classList.add('has-changes');
+    });
+  });
+
+  // 从已选字段中移除字段
+  panel.querySelectorAll('.remove-field').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const fid = btn.dataset.fid;
+      // 保留当前输入框中的值
+      const currentData = _collectDetailData(panel, profile);
+      Object.assign(preset.data, currentData);
+      delete preset.data[fid];
+      _rerenderDetail(panel, preset, profile);
+      panel.querySelector('[data-act="save"]')?.classList.add('has-changes');
+    });
+  });
+
   // Bind auto-fill tab
   bindAutoFillEvents(panel, preset);
 
@@ -2119,15 +2235,15 @@ window.bindDetailEvents = function(panel, preset, profile) {
     showToast('⭐ 已设为全局默认', 'success');
   });
 
-  // 📋 Copy — 复制字段文本信息到剪贴板
+  // 📋 Copy — 复制字段文本信息到剪贴板（仅复制已选字段）
   panel.querySelector('[data-act="copy"]')?.addEventListener('click', async e => {
     e.stopPropagation();
-    // 收集当前字段值，格式：字段名：值
+    const currentData = _collectDetailData(panel, profile);
     const fields = profile.fields || [];
     const lines = fields
+      .filter(f => currentData.hasOwnProperty(f.id))
       .map(f => {
-        const inp = panel.querySelector(`.dfi[data-fid="${f.id}"]`);
-        const val = inp ? inp.value : (preset.data?.[f.id] ?? '');
+        const val = currentData[f.id] ?? '';
         return val ? `${f.name}：${val}` : null;
       })
       .filter(Boolean);

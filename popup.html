@@ -705,6 +705,9 @@
       display: flex;
       flex-direction: column;
       gap: 3px;
+      position: relative;
+      padding: 6px;
+      border-radius: var(--rsm);
     }
 
     .dfield.full {
@@ -736,6 +739,72 @@
     .dfield textarea.inp {
       resize: vertical;
       min-height: 50px;
+    }
+
+    .detail-fields-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--t0);
+      margin-bottom: 6px;
+    }
+
+    .dfield .dtype {
+      font-size: 9px;
+      color: var(--t2);
+      font-weight: 500;
+      text-transform: lowercase;
+      letter-spacing: 0;
+      margin-left: 4px;
+    }
+
+    .dfield.available {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 8px;
+      border: 1px dashed var(--b0);
+      border-radius: var(--rsm);
+      background: var(--bg0);
+      cursor: pointer;
+      transition: all var(--tf);
+    }
+
+    .dfield.available:hover {
+      border-color: var(--p);
+      background: rgba(99, 102, 241, .05);
+    }
+
+    .dfield.available .dlbl {
+      text-transform: none;
+      letter-spacing: 0;
+      color: var(--t0);
+      font-size: 12px;
+    }
+
+    .dfield.available .dtype {
+      font-size: 10px;
+      color: var(--t2);
+    }
+
+    .dfield .remove-field {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 18px;
+      height: 18px;
+      font-size: 11px;
+      line-height: 18px;
+      padding: 0;
+      border-radius: var(--rsm);
+      opacity: 0;
+      transition: opacity var(--tf);
+    }
+
+    .dfield:hover .remove-field {
+      opacity: 1;
     }
 
     .detail-acts {
@@ -1409,6 +1478,115 @@
       gap: 8px;
       justify-content: flex-end;
       margin-top: 14px;
+    }
+
+    /* Preset field picker */
+    .ppicker-hd {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+
+    .ppicker-list {
+      border: 1px solid var(--b0);
+      border-radius: var(--rsm);
+      max-height: 260px;
+      overflow-y: auto;
+      padding: 4px;
+      background: var(--bg0);
+    }
+
+    .ppicker-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 8px;
+      border-radius: var(--rsm);
+      cursor: pointer;
+      transition: background var(--tf), border-color var(--tf);
+      font-size: 12px;
+      border: 1px solid transparent;
+      user-select: none;
+    }
+
+    .ppicker-item:hover {
+      background: var(--bg2);
+    }
+
+    .ppicker-item.selected {
+      background: rgba(99, 102, 241, .08);
+      border-color: var(--p);
+    }
+
+    .ppicker-check {
+      width: 16px;
+      height: 16px;
+      border: 1.5px solid var(--b1);
+      border-radius: var(--rsm);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: #fff;
+      transition: all var(--tf);
+      background: var(--bg0);
+    }
+
+    .ppicker-item.selected .ppicker-check {
+      background: var(--p);
+      border-color: var(--p);
+    }
+
+    .ppicker-empty {
+      padding: 16px;
+      text-align: center;
+      color: var(--t2);
+      font-size: 12px;
+    }
+
+    /* Preset context menu */
+    .preset-ctx-menu {
+      position: fixed;
+      z-index: 1000;
+      background: var(--card);
+      border: 1px solid var(--b0);
+      border-radius: var(--rsm);
+      box-shadow: var(--shlg);
+      min-width: 140px;
+      padding: 4px;
+      display: none;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .preset-ctx-menu.show {
+      display: flex;
+    }
+
+    .preset-ctx-item {
+      padding: 7px 10px;
+      border-radius: var(--rsm);
+      font-size: 12px;
+      cursor: pointer;
+      transition: background var(--tf);
+      color: var(--t0);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .preset-ctx-item:hover {
+      background: var(--bg2);
+    }
+
+    .preset-ctx-item.danger {
+      color: var(--err);
+    }
+
+    .preset-ctx-item.danger:hover {
+      background: rgba(239, 68, 68, .1);
     }
 
     /* About */
@@ -2529,7 +2707,7 @@
             <!-- Selector input + live picker button -->
             <div style="display:flex;gap:5px;flex-direction:column;">
               <div style="display:flex;gap:5px;">
-                <input class="inp" id="new-fsel" placeholder="CSS 选择器（如：#issue_subject）" style="flex:1;">
+                <input class="inp" id="new-fsel" placeholder="CSS 或 XPath（如：#issue_subject 或 xpath://input[@name='q']）" style="flex:1;">
                 <button class="btn btn-g btn-sm" id="pick-btn" title="开启悬停拾取：鼠标悬停到页面字段时自动填入此处">🎯 拾取</button>
               </div>
               <div class="picker-hint" id="picker-hint">
@@ -2794,6 +2972,29 @@
         <button class="btn btn-p" id="dlg-confirm">确定</button>
       </div>
     </div>
+  </div>
+
+  <!-- Preset Field Picker -->
+  <div class="dlg-ov" id="preset-picker-ov">
+    <div class="dlg dlg-wide" id="preset-picker-box" style="display:flex;flex-direction:column;">
+      <div class="dlg-title">选择要填充的字段</div>
+      <div class="ppicker-hd">
+        <input type="text" class="inp" id="ppicker-search" placeholder="搜索字段…" style="flex:1;">
+        <button class="btn btn-g btn-sm" id="ppicker-toggle-all">取消全选</button>
+      </div>
+      <div class="ppicker-list" id="ppicker-list"></div>
+      <div class="dlg-hint">勾选需要加入此预设的字段，未选中的字段可在创建后从详情里继续添加。</div>
+      <div class="dlg-btns">
+        <button class="btn btn-g" id="ppicker-cancel">取消</button>
+        <button class="btn btn-p" id="ppicker-confirm">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Preset right-click context menu -->
+  <div class="preset-ctx-menu" id="preset-ctx-menu">
+    <div class="preset-ctx-item" data-act="def">⭐ 设为默认填充</div>
+    <div class="preset-ctx-item" data-act="del">🗑️ 删除预设</div>
   </div>
 
   <div class="toast" id="toast"></div>

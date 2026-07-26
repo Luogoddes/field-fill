@@ -1,8 +1,8 @@
 /**
- * content.js — 字段填充 · Universal Field Filler v1.4.7
+ * content.js — 字段填充 · Universal Field Filler v1.4.8
  * 洛 - 愿执一生笔，画汝眉上柳...
  *
- * ★ v1.4.7 拾取器方案：
+ * ★ v1.4.8 拾取器方案：
  *   鼠标悬停到表单元素时，通过 chrome.runtime.sendMessage 实时发送元素信息到 background
  *   background 存入 storage，popup 保持打开并轮询 storage，实时更新选择器输入框
  *   不需要关闭 popup，不需要浮层面板
@@ -161,6 +161,14 @@
     if (el.tagName === 'SELECT')   return 'select';
     if (el.tagName === 'TEXTAREA') return 'textarea';
     if (el.tagName === 'INPUT' && (el.type === 'time' || el.type === 'date')) return el.type;
+    // 常见自定义下拉组件容器或输入框识别为 select
+    if (el.classList) {
+      const cls = el.className;
+      if (/\b(ant-select|el-select|ivu-select|react-select|MuiSelect|ms-parent|select2|chosen|mantine-Select|arco-select|semi-select|n-base-select|bk-select)\b/.test(cls)) return 'select';
+      if (el.getAttribute('role') === 'combobox' || el.getAttribute('role') === 'listbox') return 'select';
+      const parent = el.closest && el.closest('.ant-select, .el-select, .ivu-select, .MuiInputBase-root, .react-select__control, .ms-parent, [role="combobox"], [role="listbox"]');
+      if (parent) return 'select';
+    }
     return 'text';
   }
 
@@ -224,6 +232,39 @@
     return resolved;
   }
 
+  // ════════════════════════════════════════════
+  //  Selector engine: CSS or XPath
+  //  支持 selector 以 "xpath:" 开头时使用 XPath 定位
+  // ════════════════════════════════════════════
+  function findElement(selector) {
+    if (typeof selector !== 'string') return null;
+    const s = selector.trim();
+    if (s.startsWith('xpath:')) {
+      const xp = s.slice(6).trim();
+      if (!xp) return null;
+      try {
+        return document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+      } catch (_) { return null; }
+    }
+    try { return document.querySelector(s); } catch (_) { return null; }
+  }
+
+  function findElements(selector) {
+    if (typeof selector !== 'string') return [];
+    const s = selector.trim();
+    if (s.startsWith('xpath:')) {
+      const xp = s.slice(6).trim();
+      if (!xp) return [];
+      try {
+        const res = document.evaluate(xp, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+        const arr = [];
+        for (let i = 0; i < res.snapshotLength; i++) arr.push(res.snapshotItem(i));
+        return arr;
+      } catch (_) { return []; }
+    }
+    try { return Array.from(document.querySelectorAll(s)); } catch (_) { return []; }
+  }
+
   // 统一设置 <select> 值：按 value 精确 → text 精确 → 包含匹配
   function setSelectValue(el, val) {
     const v = String(val).trim().toLowerCase();
@@ -244,38 +285,101 @@
     return true;
   }
 
-  // 填充 Ant Design / 自定义下拉组件：展开 → 输入 → 点击匹配选项
-  function setAntSelectValue(container, val) {
+  // 填充 Ant Design / Element UI / MUI / React-Select 等自定义下拉组件
+  function setCustomSelectValue(root, val) {
     const raw = String(val).trim();
     if (!raw) return false;
 
-    // 先点击容器展开下拉菜单
-    container.focus();
-    container.click();
+    // root 可能是 input、input 外层容器或整个下拉组件，先统一为组件容器
+    const container = (root.closest ? (root.closest('.ant-select, .el-select, .ivu-select, .MuiInputBase-root, .react-select__control, .ms-parent, .select2-selection, .ms-choice, [role="combobox"], [role="listbox"]') || root) : root);
 
-    // 如果是可搜索的 select，先在输入框里输入值触发筛选
-    const input = container.querySelector('.ant-select-selection-search-input');
-    if (input && !input.readOnly && input.style.opacity !== '0') {
-      input.focus();
-      input.value = raw;
-      input.dispatchEvent(new Event('input', { bubbles: true }));
+    // 1. 若组件内藏有原生 <select>，优先直接设置原生 select（最稳定）
+    const hiddenSelect = container.querySelector('select');
+    if (hiddenSelect && hiddenSelect.options.length > 0) {
+      if (setSelectValue(hiddenSelect, val)) return true;
     }
 
-    // 等待下拉菜单渲染后点击匹配项
-    setTimeout(function() {
-      const selectors = '.ant-select-item-option-content, .ant-select-dropdown-menu-item-content, .ant-cascader-menu-item-content';
-      const options = document.querySelectorAll(selectors);
-      const target = Array.from(options).find(function(o) {
-        const text = o.textContent.trim();
-        return text === raw || text.toLowerCase() === raw.toLowerCase() || text.includes(raw);
-      });
-      if (target) {
-        const item = target.closest('.ant-select-item-option, .ant-select-dropdown-menu-item, .ant-cascader-menu-item');
-        if (item) {
-          item.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-          item.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true }));
-          item.click();
+    // 2. 展开下拉菜单
+    function openDropdown() {
+      const target = container.querySelector('input[role="combobox"], input:not([type="hidden"])') || container;
+      target.focus();
+      target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      target.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true }));
+      target.click();
+    }
+    openDropdown();
+
+    // 常见下拉选项选择器（覆盖 Ant Design、Element UI、iView、MUI、React-Select 等）
+    const optionSelectors = [
+      '.ant-select-item-option-content',
+      '.ant-select-dropdown-menu-item-content',
+      '.ant-cascader-menu-item-content',
+      '.el-select-dropdown__item',
+      '.el-dropdown-menu__item',
+      '.ivu-select-item',
+      '.MuiButtonBase-root.MuiMenuItem-root',
+      '.MuiPaper-root .MuiMenuItem-root',
+      '.react-select__option',
+      '[role="option"]',
+      '.dropdown-item',
+      '.select2-results__option',
+      '.chosen-results li',
+      '.ms-drop li',
+      '.mantine-Select-item',
+      '.arco-select-option',
+      '.semi-select-option',
+      '.n-base-select-option__content',
+      '.bk-select-dropdown-item',
+      'li[data-value]',
+      '[data-value]'
+    ];
+    const rawLower = raw.toLowerCase();
+
+    function pickOption() {
+      // 优先在 container 内部查找，再回退到 document.body（很多组件把下拉菜单渲染到 body）
+      const pools = [container, document.body];
+      let candidates = [];
+      for (const pool of pools) {
+        if (!pool) continue;
+        for (const sel of optionSelectors) {
+          pool.querySelectorAll(sel).forEach(o => candidates.push(o));
         }
+        if (candidates.length) break;
+      }
+      candidates = [...new Set(candidates)];
+
+      let hit = candidates.find(o => o.textContent.trim() === raw);
+      if (!hit) hit = candidates.find(o => o.textContent.trim().toLowerCase() === rawLower);
+      if (!hit) hit = candidates.find(o => o.textContent.trim().includes(raw));
+      if (!hit) hit = candidates.find(o => o.textContent.trim().toLowerCase().includes(rawLower));
+      if (!hit) {
+        hit = candidates.find(o => {
+          const dv = (o.getAttribute('data-value') || '').trim();
+          const al = (o.getAttribute('aria-label') || '').trim();
+          return dv && (dv === raw || dv.toLowerCase() === rawLower || dv.includes(raw));
+        });
+      }
+      if (!hit) return false;
+
+      const item = hit.closest('[role="option"], .ant-select-item-option, .ant-select-dropdown-menu-item, .ant-cascader-menu-item, .el-select-dropdown__item, .el-dropdown-menu__item, .ivu-select-item, .MuiMenuItem-root, .react-select__option, .dropdown-item, .select2-results__option, .mantine-Select-item, .arco-select-option, .semi-select-option, .n-base-select-option, .bk-select-dropdown-item, [data-value]') || hit;
+      item.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      item.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true }));
+      item.click();
+      item.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+      return true;
+    }
+
+    if (pickOption()) return true;
+
+    // 3. 可搜索下拉：尝试在输入框输入值触发筛选后再选
+    setTimeout(function() {
+      const input = container.querySelector('.ant-select-selection-search-input, .el-input__inner, input[role="combobox"], input:not([type="hidden"])');
+      if (input && input.offsetParent !== null && !input.readOnly && input.style.opacity !== '0') {
+        input.focus();
+        input.value = raw;
+        input.dispatchEvent(new Event('input',  { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        setTimeout(pickOption, 160);
       }
     }, 120);
 
@@ -291,7 +395,7 @@
       if (val === undefined || val === null) continue;
       val = resolveTemplateValue(val);
       if (String(val).trim() === '') continue;
-      const el = document.querySelector(def.selector);
+      const el = findElement(def.selector);
       if (!el) { fail++; failedFields.push({ fid, selector: def.selector, reason: '元素未找到' }); continue; }
       try {
         if (def.type === 'text' || def.type === 'textarea') {
@@ -307,13 +411,11 @@
             if (setSelectValue(el, val)) success++;
             else { fail++; failedFields.push({ fid, selector: def.selector, reason: '选项不匹配' }); }
           }
-          // Ant Design / 自定义下拉
-          else if ((el.classList && el.classList.contains('ant-select')) || (el.closest && el.closest('.ant-select'))) {
-            const container = (el.classList && el.classList.contains('ant-select')) ? el : el.closest('.ant-select');
-            if (setAntSelectValue(container, val)) success++;
+          // Ant Design / Element UI / MUI / React-Select 等自定义下拉
+          else {
+            if (setCustomSelectValue(el, val)) success++;
             else { fail++; failedFields.push({ fid, selector: def.selector, reason: '自定义下拉展开失败' }); }
           }
-          else { fail++; failedFields.push({ fid, selector: def.selector, reason: '非可填充下拉元素' }); }
         } else if (def.type === 'time' || def.type === 'date') {
           const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
           setter ? setter.call(el, String(val)) : (el.value = String(val));
@@ -324,7 +426,7 @@
       } catch (e) { fail++; failedFields.push({ fid, selector: def.selector, reason: e.message }); console.debug('[UFF]', fid, e.message); }
     }
     const firstSel = Object.values(fieldMap)[0]?.selector;
-    if (firstSel) document.querySelector(firstSel)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (firstSel) findElement(firstSel)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return { success, fail, failedFields };
   }
 
@@ -898,20 +1000,20 @@
     return { executed, failed };
   }
 
-  // 等待元素出现（带超时）
+  // 等待元素出现（带超时，支持 CSS / XPath）
   function waitForElement(selector, timeout = 5000) {
     return new Promise(resolve => {
-      const existing = document.querySelector(selector);
+      const existing = findElement(selector);
       if (existing) return resolve(existing);
       const start = Date.now();
       const obs = new MutationObserver(() => {
-        const el = document.querySelector(selector);
+        const el = findElement(selector);
         if (el) { obs.disconnect(); resolve(el); }
         else if (Date.now() - start > timeout) { obs.disconnect(); resolve(null); }
       });
-      obs.observe(document.body, { childList: true, subtree: true });
+      if (document.body) obs.observe(document.body, { childList: true, subtree: true });
       // 兜底超时
-      setTimeout(() => { obs.disconnect(); resolve(document.querySelector(selector)); }, timeout);
+      setTimeout(() => { if (document.body) obs.disconnect(); resolve(findElement(selector)); }, timeout);
     });
   }
 
@@ -1028,7 +1130,17 @@
   }
 
   // ★ 暴露核心函数供第二个 IIFE（initAutoFill）使用
-  window.__uff = { doFill: doFill, showToast: showToast, executeFlow: executeFlow, setSelectValue: setSelectValue, resolveTemplateValue: resolveTemplateValue, resolveSharedValue: resolveSharedValue };
+  window.__uff = {
+    doFill: doFill,
+    showToast: showToast,
+    executeFlow: executeFlow,
+    setSelectValue: setSelectValue,
+    setCustomSelectValue: setCustomSelectValue,
+    findElement: findElement,
+    findElements: findElements,
+    resolveTemplateValue: resolveTemplateValue,
+    resolveSharedValue: resolveSharedValue
+  };
 
 })();
 
@@ -1075,28 +1187,32 @@
         val = window.__uff.resolveTemplateValue(val);
         if (!String(val).trim()) continue;
       }
-      var el = document.querySelector(def.selector);
+      var el = window.__uff && window.__uff.findElement ? window.__uff.findElement(def.selector) : document.querySelector(def.selector);
       if (!el) { f++; continue; }
       if (!overwrite) {
-        var cur = el.value;
+        var cur = el.value || el.textContent;
         if (cur && cur.trim()) continue;
       }
       try {
         if (def.type === 'select') {
-          if (window.__uff && window.__uff.setSelectValue) {
-            if (window.__uff.setSelectValue(el, val)) s++; else f++;
-          } else {
-            var v = String(val).trim().toLowerCase(); var ok = false;
-            for (var i = 0; i < el.options.length && !ok; i++)
-              if (el.options[i].value.trim().toLowerCase() === v ||
-                  el.options[i].textContent.trim().toLowerCase() === v)
-                { el.value = el.options[i].value; ok = true; }
-            for (var i = 0; i < el.options.length && !ok; i++)
-              if (el.options[i].value.toLowerCase().includes(v) ||
-                  el.options[i].textContent.toLowerCase().includes(v))
-                { el.value = el.options[i].value; ok = true; }
-            if (ok) { el.dispatchEvent(new Event('change', { bubbles: true })); s++; } else f++;
-          }
+          if (el.tagName === 'SELECT') {
+            if (window.__uff && window.__uff.setSelectValue) {
+              if (window.__uff.setSelectValue(el, val)) s++; else f++;
+            } else {
+              var v = String(val).trim().toLowerCase(); var ok = false;
+              for (var i = 0; i < el.options.length && !ok; i++)
+                if (el.options[i].value.trim().toLowerCase() === v ||
+                    el.options[i].textContent.trim().toLowerCase() === v)
+                  { el.value = el.options[i].value; ok = true; }
+              for (var i = 0; i < el.options.length && !ok; i++)
+                if (el.options[i].value.toLowerCase().includes(v) ||
+                    el.options[i].textContent.toLowerCase().includes(v))
+                  { el.value = el.options[i].value; ok = true; }
+              if (ok) { el.dispatchEvent(new Event('change', { bubbles: true })); s++; } else f++;
+            }
+          } else if (window.__uff && window.__uff.setCustomSelectValue) {
+            if (window.__uff.setCustomSelectValue(el, val)) s++; else f++;
+          } else { f++; }
         } else {
           var proto  = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
           var setter = Object.getOwnPropertyDescriptor(proto, 'value');
