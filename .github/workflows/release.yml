@@ -1,0 +1,81 @@
+name: Release Extension
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'manifest.json'
+      - 'background.js'
+      - 'content.js'
+      - 'content.css'
+      - 'popup.html'
+      - 'popup.js'
+      - 'icons/**'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get version from manifest
+        id: version
+        run: |
+          VERSION=$(node -p "require('./manifest.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extension version: $VERSION"
+
+      - name: Check if release already exists
+        id: check_release
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/${{ github.repository }}/releases/tags/v$VERSION)
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          if [ "$STATUS" = "200" ]; then
+            echo "Release v$VERSION already exists. Skipping."
+          fi
+
+      - name: Package extension
+        if: steps.check_release.outputs.status != '200'
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          mkdir -p dist
+          # 仅打包扩展运行所需文件，过滤开发文档、源码映射等
+          zip -r "dist/field-fill-v${VERSION}.zip" \
+            manifest.json \
+            background.js \
+            content.js \
+            content.css \
+            popup.html \
+            popup.js \
+            icons/ \
+            README.md \
+            -x "*.md" "*.rar" "*.zip" "*.git*" "docs/*" ".github/*"
+          echo "Packaged: dist/field-fill-v${VERSION}.zip"
+          ls -lh dist/
+
+      - name: Create GitHub Release
+        if: steps.check_release.outputs.status != '200'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          body: |
+            🚀 字段填充 v${{ steps.version.outputs.version }} 已发布。
+
+            ### 安装方式
+            1. 下载附件 `field-fill-v${{ steps.version.outputs.version }}.zip`。
+            2. 解压到本地目录。
+            3. 打开 Chrome / Edge，访问 `chrome://extensions/`。
+            4. 开启「开发者模式」，点击「加载已解压的扩展程序」，选择解压后的目录。
+
+            更详细的使用说明请查看 [Wiki](https://github.com/${{ github.repository }}/wiki)。
+          files: dist/field-fill-v*.zip
+          generate_release_notes: true
