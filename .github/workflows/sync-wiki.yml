@@ -29,14 +29,15 @@ jobs:
           REPO="${{ github.repository }}"
           WIKI_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${REPO}.wiki.git"
 
-          # 先检测 Wiki 仓库是否可访问（未启用 Wiki 时克隆会 404）
+          # 先检测 Wiki 仓库是否可访问
           echo "Checking wiki repository..."
-          if ! git ls-remote "$WIKI_URL" >/dev/null 2>&1; then
+          if ! git ls-remote "$WIKI_URL" 2>&1; then
             echo ""
-            echo "❌ Wiki 仓库无法访问。请先在 GitHub 仓库设置中启用 Wiki："
-            echo "   https://github.com/${REPO}/settings/wiki"
+            echo "❌ Wiki 仓库无法访问。可能的原因："
+            echo "   1. Wiki 功能未启用：https://github.com/${REPO}/settings/wiki"
+            echo "   2. Wiki 虽已启用，但还没有初始化。请先在 Wiki 页面手动创建第一个页面（例如 Home），保存后再运行本 workflow。"
+            echo "   3. GITHUB_TOKEN 权限不足（需要 contents: write）。"
             echo ""
-            echo "启用后重新运行本 workflow 即可。"
             exit 1
           fi
 
