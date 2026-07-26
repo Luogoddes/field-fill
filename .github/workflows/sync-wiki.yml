@@ -20,18 +20,32 @@ jobs:
 
       - name: Sync docs/wiki to GitHub Wiki
         run: |
+          set -e
+
           # 配置 git 身份
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 克隆 Wiki 仓库（需先在 Settings → Wiki 中启用）
-          WIKI_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git"
+          REPO="${{ github.repository }}"
+          WIKI_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${REPO}.wiki.git"
+
+          # 先检测 Wiki 仓库是否可访问（未启用 Wiki 时克隆会 404）
+          echo "Checking wiki repository..."
+          if ! git ls-remote "$WIKI_URL" >/dev/null 2>&1; then
+            echo ""
+            echo "❌ Wiki 仓库无法访问。请先在 GitHub 仓库设置中启用 Wiki："
+            echo "   https://github.com/${REPO}/settings/wiki"
+            echo ""
+            echo "启用后重新运行本 workflow 即可。"
+            exit 1
+          fi
+
+          # 克隆 Wiki 仓库
           git clone "$WIKI_URL" wiki-repo
+          cd wiki-repo
 
           # 清空旧文件（保留 .git）
-          cd wiki-repo
-          find . -maxdepth 1 ! -name '.git' -type f -delete
-          find . -maxdepth 1 ! -name '.git' -type d -exec rm -rf {} +
+          find . -maxdepth 1 ! -name '.git' \( -type f -o -type d \) -exec rm -rf {} +
 
           # 复制 docs/wiki 下所有 .md 文件（保留子目录）
           cp -R ../docs/wiki/* .
