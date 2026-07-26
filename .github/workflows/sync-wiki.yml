@@ -62,8 +62,8 @@ jobs:
           git clone "$WIKI_URL" wiki-repo
           cd wiki-repo
 
-          # 清空旧文件（保留 .git）
-          find . -maxdepth 1 ! -name '.git' \( -type f -o -type d \) -exec rm -rf {} +
+          # 清空旧文件（保留 .git），-mindepth 1 避免匹配 . 和 ..
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
 
           # 复制 docs/wiki 下所有 .md 文件（保留子目录）
           cp -R ../docs/wiki/* .
