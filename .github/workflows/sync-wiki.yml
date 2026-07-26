@@ -27,11 +27,28 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           REPO="${{ github.repository }}"
-          WIKI_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${REPO}.wiki.git"
+          TOKEN="${{ secrets.GITHUB_TOKEN }}"
 
-          # 先检测 Wiki 仓库是否可访问
-          echo "Checking wiki repository..."
-          if ! git ls-remote "$WIKI_URL" 2>&1; then
+          # 先检测 Wiki 仓库是否可访问（尝试两种认证格式）
+          echo "Checking wiki repository: https://github.com/${REPO}.wiki.git"
+
+          WIKI_URL_1="https://x-access-token:${TOKEN}@github.com/${REPO}.wiki.git"
+          WIKI_URL_2="https://${TOKEN}@github.com/${REPO}.wiki.git"
+
+          WIKI_URL=""
+          for URL in "$WIKI_URL_1" "$WIKI_URL_2"; do
+            echo "Trying authentication format..."
+            if git ls-remote "$URL" > /tmp/git_ls_remote.log 2>&1; then
+              WIKI_URL="$URL"
+              echo "✅ Wiki repository is accessible."
+              break
+            else
+              echo "Failed with this format:"
+              cat /tmp/git_ls_remote.log
+            fi
+          done
+
+          if [ -z "$WIKI_URL" ]; then
             echo ""
             echo "❌ Wiki 仓库无法访问。可能的原因："
             echo "   1. Wiki 功能未启用：https://github.com/${REPO}/settings/wiki"
